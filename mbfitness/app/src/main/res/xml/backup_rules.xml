@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 8 to 11, which ignore data_extraction_rules.xml. Same contents. -->
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="file" path="datastore/" />
+    <include domain="file" path="logo/" />
+</full-backup-content>

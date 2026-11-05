@@ -1,0 +1,25 @@
+# Build output
+.gradle/
+.kotlin/
+build/
+captures/
+*.apk
+*.aab
+*.ap_
+*.hprof
+
+# Local machine
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# Secrets (hard rule 10)
+*.jks
+*.keystore
+keystore.properties
+
+# Member data must never reach git (hard rule 11, SPEC 7.10)
+mbfitness_backup_*.json
+members*.csv
+*_import.csv

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and up. SPEC 12: database, settings and logo, no caches. The database only
+     ever holds the Aadhaar ciphertext, which is useless without this phone's Keystore key. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="." />
+        <include domain="file" path="datastore/" />
+        <include domain="file" path="logo/" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="." />
+        <include domain="file" path="datastore/" />
+        <include domain="file" path="logo/" />
+    </device-transfer>
+</data-extraction-rules>
