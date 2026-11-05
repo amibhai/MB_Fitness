@@ -49,13 +49,16 @@ object MemberImport {
 
     /**
      * Checks every row. [useAadhaar] reflects bhaiya's separate tick: without it the column is
-     * ignored completely, so a bad value there can't block the import (SPEC 7.9).
+     * ignored completely, so a bad value there can't block the import (SPEC 7.9). [planMonths]
+     * lists the active plan lengths: a row needing another one is refused rather than given an
+     * invented price.
      */
     fun preview(
         text: String,
         existingPhones: Map<String, String>,
         useAadhaar: Boolean,
         today: Long,
+        planMonths: Set<Int>? = null,
     ): ImportPreview {
         val records = CsvParser.parse(text)
         val header = records.firstOrNull()?.fields?.map(::headerName).orEmpty()
@@ -84,7 +87,11 @@ object MemberImport {
             if (phone == null) reasons += if (SCIENTIFIC.matches(rawPhone)) PHONE_EXCEL_ERROR else PHONE_ERROR
 
             val months = cell("plan_months").toIntOrNull()?.takeIf { it in MIN_PLAN_MONTHS..MAX_PLAN_MONTHS }
-            if (months == null) reasons += "Plan must be 1 to 24 months"
+            if (months == null) {
+                reasons += "Plan must be 1 to 24 months"
+            } else if (planMonths != null && months !in planMonths) {
+                reasons += "No $months-month plan. Add it in Plans first."
+            }
 
             val expiry = Dates.parseCsvDate(cell("expiry_date"))
             if (expiry == null) reasons += "Expiry date must be DD-MM-YYYY"

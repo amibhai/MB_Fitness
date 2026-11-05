@@ -50,3 +50,27 @@ The spec was silent or ambiguous on these. Each picks the safer behaviour.
 - **CSV dates also accept `1-2-2026` and `01/02/2026`.** Why: Excel often rewrites them. Two-digit years are refused because they are ambiguous.
 - **The same Aadhaar twice in one import file is an error on the later row.**
 - **`domain/` coverage is enforced by `verifyDomainCoverage`** (90% of lines), which `scripts/check.sh` runs.
+
+## 5 Nov 2026: data layer (Phase 2)
+
+Additions to the SPEC 6 data model, beyond the Aadhaar fields in SPEC 7.10 and the fixes in the table above:
+
+- **`Member.activePhone`:** equal to `phone` until the member is deleted, then null, with a UNIQUE index. Why: SPEC 6 wants phones unique among non-deleted members. SQLite allows many NULLs in a UNIQUE column, so the database itself enforces this, and Room can declare it, unlike a partial index.
+- **`Payment.planMonths`, `ruleApplied`, `restartAfterDays`:** saved when a payment is recorded. **`receiptNo` is nullable,** for OPENING rows.
+- **`Message.dedupeKey`** (UNIQUE) **and `submittedAt`.** Cancelling a message clears its key, so a cancelled reminder can be planned again.
+- **`counters` table:** holds the next receipt number, replacing `nextReceiptNo` in DataStore.
+- **`MemberEventType.IMPORTED`.** Why: an imported member is active but isn't a new join, so Reports must tell them apart.
+- **Settings added:** `packLanguage`, `backupPasswordHint`, `backupKeyWrapped`, `backupSalt`. `reminderTime` is stored as `reminderHour` and `reminderMinute`.
+
+Behaviour the spec didn't cover:
+
+- **Undo of a payment that brought back a member who had left also reverses the rejoin.** Why: otherwise the leftover REJOINED event would change how their next payment is calculated.
+- **Renaming a member cancels their queued planned reminders.** Why: the text quotes the old name. The planner writes them again on its next run.
+- **An import row needing a plan length with no active plan is refused:** "No 6-month plan. Add it in Plans first." Why: inventing a price would be worse than asking.
+- **Imported members get today as their join date.** The CSV format has no join date, and their expiry comes from the file anyway.
+- **Keystore work happens before a transaction opens.** It is slow, and a failure there must not stop the member being saved.
+
+Testing notes:
+
+- **`MigrationTest` uses `AndroidSQLiteDriver`.** Why: Room's default driver compares file names in a way that breaks on Windows paths under Robolectric. It doesn't affect the app on a phone.
+- **Schemas are added to debug assets only.** Why: `MigrationTestHelper` reads them from assets, and under Robolectric only the variant's own assets are visible. They never ship in a release.

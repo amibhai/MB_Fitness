@@ -10,7 +10,8 @@ enum class PaymentMode { UPI, CASH, OTHER }
 /** SPEC 7.3. A continues from the old expiry, B starts from the payment date. */
 enum class RenewalRule { CONTINUE_FROM_EXPIRY, START_FROM_PAYMENT }
 
-enum class MemberEventType { JOINED, LEFT, REJOINED, FROZEN, UNFROZEN, DELETED, RESTORED }
+/** IMPORTED adds to SPEC 6: an imported member is active but isn't a new join in Reports. */
+enum class MemberEventType { JOINED, IMPORTED, LEFT, REJOINED, FROZEN, UNFROZEN, DELETED, RESTORED }
 
 enum class MessageStatus { QUEUED, SENDING, SENT, DELIVERED, FAILED, CANCELLED }
 

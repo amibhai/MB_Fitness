@@ -208,6 +208,12 @@ class CsvAndImportTest {
     }
 
     @Test
+    fun aRowNeedingAPlanThatDoesNotExistIsRefused() {
+        val result = MemberImport.preview(header + "A,9876543210,6,31-12-2026,0,,,\n", emptyMap(), false, today, planMonths = setOf(1, 3))
+        assertEquals(listOf("No 6-month plan. Add it in Plans first."), result.errors.single().reasons)
+    }
+
+    @Test
     fun aShortRowJustHasBlankCells() {
         val row = preview("A,9876543210,1,31-12-2026\n").rows.single()
         assertEquals(0L, row.balanceDue)

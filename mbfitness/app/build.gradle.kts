@@ -51,6 +51,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // MigrationTestHelper reads schemas from assets. Debug only: never shipped in a release.
+    sourceSets.getByName("debug").assets.directories.add("schemas")
+
     testCoverage {
         jacocoVersion = libs.versions.jacoco.get()
     }
