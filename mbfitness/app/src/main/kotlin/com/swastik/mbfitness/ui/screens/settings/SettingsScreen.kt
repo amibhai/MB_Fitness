@@ -34,9 +34,20 @@ import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
 import kotlinx.coroutines.launch
 
-/** The Security section. The rest of SPEC 10.2 screen 12 arrives with Phase 6. */
 @Composable
-fun SettingsScreen(onSetPin: () -> Unit) {
+private fun NavRow(label: String, onClick: () -> Unit) {
+    val colors = MbTheme.colors
+    MbCard(Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, Modifier.weight(1f), style = MbType.BodyLarge, color = colors.textPrimary)
+            Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, tint = colors.textSecondary)
+        }
+    }
+}
+
+/** Part of SPEC 10.2 screen 12. The rest arrives with Phase 6. */
+@Composable
+fun SettingsScreen(onSetPin: () -> Unit, onPlans: () -> Unit, onRecycleBin: () -> Unit) {
     val context = LocalContext.current
     val settingsStore = (context.applicationContext as App).settings
     val settings by settingsStore.settings.collectAsStateWithLifecycle(AppSettings())
@@ -53,6 +64,10 @@ fun SettingsScreen(onSetPin: () -> Unit) {
                 .padding(ScreenPadding),
             verticalArrangement = Arrangement.spacedBy(ListGap),
         ) {
+            SectionLabel("Gym")
+            NavRow("Plans and prices", onPlans)
+            SectionLabel("Data")
+            NavRow("Recycle bin", onRecycleBin)
             SectionLabel("Security")
             MbCard(Modifier.fillMaxWidth(), onClick = onSetPin) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

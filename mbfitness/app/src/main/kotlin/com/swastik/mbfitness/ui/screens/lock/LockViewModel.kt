@@ -26,6 +26,8 @@ data class LockUiState(
     val busy: Boolean = false,
     val biometricEnabled: Boolean = false,
     val recoveryAvailable: Boolean = false,
+    /** True once the right PIN went in, for screens that ask for it again. */
+    val pinConfirmed: Boolean = false,
 )
 
 /** The lock screen's logic: PIN entry, the wrong-guess wait, and "Forgot PIN". */
@@ -103,7 +105,15 @@ class LockViewModel(
         }
     }
 
-    fun onBiometricSuccess() = appLock.markUnlocked()
+    fun onBiometricSuccess() {
+        appLock.markUnlocked()
+        state.update { it.copy(pinConfirmed = true) }
+    }
+
+    /** Ready to ask again, when the same screen needs the PIN a second time. */
+    fun reset() {
+        state.update { it.copy(stage = LockStage.PIN, entered = "", message = null, pinConfirmed = false) }
+    }
 
     private fun checkPin(pin: String) {
         viewModelScope.launch {
@@ -111,7 +121,7 @@ class LockViewModel(
             when (val result = appLock.checkPin(pin)) {
                 PinCheck.Correct, PinCheck.NoPinSet -> {
                     appLock.markUnlocked()
-                    state.update { it.copy(busy = false, entered = "") }
+                    state.update { it.copy(busy = false, entered = "", pinConfirmed = true) }
                 }
                 is PinCheck.Wrong -> {
                     state.update { it.copy(busy = false, entered = "", message = "Wrong PIN. Try again.") }

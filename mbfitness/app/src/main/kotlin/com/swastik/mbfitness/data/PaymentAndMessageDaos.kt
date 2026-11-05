@@ -34,6 +34,9 @@ interface PaymentDao {
     @Query("SELECT * FROM payments WHERE id = :id")
     suspend fun get(id: Long): PaymentEntity?
 
+    @Query("SELECT * FROM payments WHERE id = :id")
+    fun observe(id: Long): Flow<PaymentEntity?>
+
     /** Soft-deleted payments are left out of everything to do with money (SPEC 7.5). */
     @Query("SELECT * FROM payments WHERE memberId = :memberId AND deletedAt IS NULL ORDER BY paidOn, id")
     suspend fun activeFor(memberId: Long): List<PaymentEntity>

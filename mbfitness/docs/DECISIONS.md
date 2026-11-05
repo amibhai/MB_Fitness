@@ -86,3 +86,18 @@ Testing notes:
 - **Debug-only theme hook.** `am start ... --es mbf_theme light|dark|system` sets the night mode for this app alone through `UiModeManager.setApplicationNightMode`. Why: the Pixel 8's system dark mode is locked against `cmd uimode`, and this avoids touching phone settings. It is compiled out of release builds.
 - **Unit tests pin Espresso 3.7.0.** Why: the older version Compose's test library brings in calls a hidden method removed in API 37.
 - **Unused icons are exempt from lint until Phase 8.** See the open items in `docs/PROGRESS.md`.
+
+## 6 Nov 2026: members and payments (Phase 4)
+
+- **Home's four tabs are equal-width cells, with the count above the label,** rather than a scrolling row. Why: on the phone, "Frozen/Left" was cut off at the screen edge, and all four counts should always be visible.
+- **Save on Record payment waits for the figures to refresh.** Why: changing tab or plan works the amount out again in the background, and a fast tap could have saved a stale amount. Only the latest refresh counts.
+- **Moving forward to a new screen dismisses the snackbar,** and Add member lifts clear of it. Why: it could sit over a bottom button for its full 5 seconds, which got in the way of adding several members in a row. The cost is that Undo is gone once you navigate forward; a payment can still be deleted from the member's history.
+- **Extended floating buttons set their own TalkBack description.** Why: Material hides their visible label from accessibility, so "Add member" was silent to TalkBack.
+- **Show QR only appears when a UPI ID is set.**
+- **Search also looks across all tabs.** Why: when bhaiya searches a name, the member should appear wherever they are. The tabs hide while searching.
+- **The QR screen is always black on white,** whatever the phone's mode, so any camera can read it.
+- **Aadhaar typing and reveal block screenshots.** While digits are in the field, or the number is revealed, the window uses `FLAG_SECURE`. Leaving the app hides a revealed number at once.
+- **Debug-only hooks live in `src/debug`** (theme, seeding fake members, setting a UPI ID), with an empty twin in `src/release`, so none of it can ship.
+- **`App` is an open class with overridable factories.** Why: UI tests run the real screens against an in-memory database, using a `TestApp` subclass.
+- **"Send SMS" on Member detail and on multi-select arrives with Phase 5,** along with the messaging engine.
+- **Testing typed the fake Aadhaar as key presses.** Why: `adb shell input text` puts its argument in the system log, which looked like a leak but wasn't the app. The test uses a made-up number from UIDAI's 9999 test range.

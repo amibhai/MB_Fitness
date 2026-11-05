@@ -1,8 +1,6 @@
 package com.swastik.mbfitness
 
-import android.app.UiModeManager
 import android.graphics.Color
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -35,27 +33,11 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         splash.setKeepOnScreenCondition { viewModel.uiState.value.loading }
         (application as App).watchForeground()
-        applyDebugThemeOverride()
+        DebugHooks.onActivityCreated(this)
         setContent {
             MbTheme {
                 AppRoot(viewModel)
             }
         }
-    }
-
-    /**
-     * Debug builds only, and compiled out of a release: lets a light or dark check run on a
-     * real phone for this app alone, without touching the phone's own setting:
-     * adb shell am start -n com.swastik.mbfitness/.MainActivity --es mbf_theme light
-     */
-    private fun applyDebugThemeOverride() {
-        if (!BuildConfig.DEBUG || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
-        val mode = when (intent.getStringExtra("mbf_theme")) {
-            "light" -> UiModeManager.MODE_NIGHT_NO
-            "dark" -> UiModeManager.MODE_NIGHT_YES
-            "system" -> UiModeManager.MODE_NIGHT_AUTO
-            else -> return
-        }
-        getSystemService(UiModeManager::class.java).setApplicationNightMode(mode)
     }
 }

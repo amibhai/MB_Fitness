@@ -179,6 +179,16 @@ class MemberRepository(
     fun observePlans(): Flow<List<PlanEntity>> = plans.observeAll()
     fun observeActivePlans(): Flow<List<PlanEntity>> = plans.observeActive()
     fun observePaymentsOn(day: Long): Flow<List<PaymentRow>> = payments.observeOnDay(day)
+    fun observePayment(id: Long): Flow<PaymentEntity?> = payments.observe(id)
+
+    suspend fun member(id: Long): MemberEntity? = members.get(id)
+    suspend fun plan(id: Long): PlanEntity? = plans.get(id)
+    suspend fun balanceOf(memberId: Long): Long =
+        MemberRules.balance(payments.activeFor(memberId).map { it.toLedger() })
+
+    /** A phone number already on another member, to warn before saving. */
+    suspend fun ownerOfPhone(phone: String, exceptMemberId: Long = 0): MemberBrief? =
+        PhoneNumbers.normalize(phone)?.let { members.briefByActivePhone(it) }?.takeIf { it.id != exceptMemberId }
 
     fun observeCollectedThisMonth(): Flow<Long> {
         val date = LocalDate.ofEpochDay(clock.today())

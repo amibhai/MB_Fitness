@@ -21,15 +21,19 @@ private val Context.settingsDataStore by preferencesDataStore(name = "settings")
 /**
  * Manual DI container (SPEC 5.3). Everything added here must stay lazy: this class also runs
  * when a boot receiver starts the process before the first unlock, when the database and
- * settings can't be opened yet.
+ * settings can't be opened yet. Tests subclass it to swap in fakes.
  */
-class App : Application() {
-    val clock: TodayProvider = SystemTodayProvider
-    val database: AppDatabase by lazy { AppDatabase.create(this) }
-    val settings: SettingsStore by lazy { SettingsStore(settingsDataStore, forceTestMode = BuildConfig.DEBUG) }
-    val aadhaarVault: AadhaarVault by lazy { KeystoreAadhaarVault() }
+open class App : Application() {
+    open val clock: TodayProvider = SystemTodayProvider
+    val database: AppDatabase by lazy { createDatabase() }
+    val settings: SettingsStore by lazy { createSettings() }
+    val aadhaarVault: AadhaarVault by lazy { createVault() }
     val members: MemberRepository by lazy { MemberRepository(database, settings, aadhaarVault, clock) }
     val appLock: AppLock by lazy { AppLock(settings, clock) }
+
+    protected open fun createDatabase(): AppDatabase = AppDatabase.create(this)
+    protected open fun createSettings(): SettingsStore = SettingsStore(settingsDataStore, forceTestMode = BuildConfig.DEBUG)
+    protected open fun createVault(): AadhaarVault = KeystoreAadhaarVault()
 
     private var watchingForeground = false
 
