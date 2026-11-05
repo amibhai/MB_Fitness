@@ -3,4 +3,4 @@
 # (merged manifest, banned dependencies, source rules) are wired into these tasks.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-./gradlew testDebugUnitTest lintDebug assembleDebug "$@"
+./gradlew testDebugUnitTest verifyDomainCoverage lintDebug assembleDebug "$@"

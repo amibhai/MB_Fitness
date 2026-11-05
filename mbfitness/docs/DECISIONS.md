@@ -32,3 +32,21 @@ Following these parts of the spec literally would cause bugs. Each fix lands in 
 | §8.11 `→` in the test prefix | It forces Unicode, so test SMS use more parts and don't reflect real pacing | Use `[TEST > Rahul]` | 5 |
 | §12 password + automatic weekly backup | The background job has no one to type the password | Store the derived key wrapped by the Keystore | 6 |
 | §9 `LOCKED_BOOT_COMPLETED` | Database and settings are unreadable until first unlock, so touching them crashes | No-op while locked; `BOOT_COMPLETED` re-arms; `App.kt` DI is lazy | 5 |
+
+## 5 Nov 2026: choices made while writing the rules (Phase 1)
+
+The spec was silent or ambiguous on these. Each picks the safer behaviour.
+
+- **Which freezes count (§7.4).** A completed freeze adds its whole length if it began on or before the expiry day, including when it runs past expiry. Why: a member with 4 days left when frozen should have 4 days left when unfrozen. A freeze starting after expiry adds nothing.
+- **A period starting inside a freeze.** Under rule B or a restart, a payment made during a freeze starts its period when the freeze ended. Why: otherwise those frozen days are lost.
+- **A freeze can give an earlier date past the restart limit.** It can keep a member inside `restartAfterDays`, so they continue from the old expiry instead of restarting from the payment date. This follows from the rules as written, so it stays.
+- **Planned reminders only go between 8 AM and 9 PM.** A late catch-up run holds them until morning. Why: the watchdog can run whenever the phone wakes up, and an SMS at midnight is how complaints start. Bhaiya's own broadcasts and manual SMS are not held.
+- **A balance reminder stays 3 days from any other reminder to that member.** Why: otherwise a member could get a reminder and a balance reminder on consecutive days, and expiry reminders already include the balance.
+- **A reminder needing a blank setting is held, not sent.** For example `{trainer_phone}` with no number set. It isn't marked as sent, so it goes once the setting is filled in. Why: never send a broken SMS and never lose a reminder.
+- **A blank UPI ID removes the `UPI: {upi_id}` clause** and the reminder still goes. Why: the reminder is useful without it, and "UPI: ." is not.
+- **Catch-up never substitutes a disabled template.** If the truthful wording's template is switched off, nothing goes.
+- **`ON_DUE` always falls on the expiry day,** whatever its stored offset. Why: its wording says "today".
+- **A missed birthday isn't sent late.** Why: "Happy Birthday" a day late reads as a mistake.
+- **CSV dates also accept `1-2-2026` and `01/02/2026`.** Why: Excel often rewrites them. Two-digit years are refused because they are ambiguous.
+- **The same Aadhaar twice in one import file is an error on the later row.**
+- **`domain/` coverage is enforced by `verifyDomainCoverage`** (90% of lines), which `scripts/check.sh` runs.

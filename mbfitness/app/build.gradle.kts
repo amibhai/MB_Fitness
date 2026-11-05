@@ -1,4 +1,5 @@
 import com.android.build.api.artifact.SingleArtifact
+import com.swastik.mbfitness.build.VerifyCoverageTask
 import com.swastik.mbfitness.build.VerifyDependenciesTask
 import com.swastik.mbfitness.build.collectModules
 import com.swastik.mbfitness.build.VerifyMergedManifestTask
@@ -188,6 +189,14 @@ val verifySourceRules = tasks.register<VerifySourceRulesTask>("verifySourceRules
     sourceDir.set(layout.projectDirectory.dir("src/main/kotlin"))
     versionCatalog.set(rootProject.layout.projectDirectory.file("gradle/libs.versions.toml"))
     report.set(layout.buildDirectory.file("reports/verify/source-rules.txt"))
+}
+
+tasks.register<VerifyCoverageTask>("verifyDomainCoverage") {
+    dependsOn("createDebugUnitTestCoverageReport")
+    coverageReport.set(layout.buildDirectory.file("reports/coverage/test/debug/report.xml"))
+    packagePath.set("com/swastik/mbfitness/domain")
+    minimumLinePercent.set(90)
+    report.set(layout.buildDirectory.file("reports/verify/domain-coverage.txt"))
 }
 
 androidComponents {

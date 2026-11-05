@@ -5,7 +5,7 @@ Build order and "done when" for each phase: SPEC §17. Run `scripts/check.sh` be
 | Phase | Status | Notes |
 |---|---|---|
 | 0 Setup | Done, 5 Nov 2026 | Debug and release builds, lint clean. Manifest, dependency and source checks each confirmed to fail on a deliberate violation. |
-| 1 Domain | Not started | |
+| 1 Domain | Done, 5 Nov 2026 | All of §15's unit tests pass (183). `domain/` line coverage 98.9%, enforced at 90%. |
 | 2 Data | Not started | |
 | 3 Shell | Not started | |
 | 4 Members and payments | Not started | |
