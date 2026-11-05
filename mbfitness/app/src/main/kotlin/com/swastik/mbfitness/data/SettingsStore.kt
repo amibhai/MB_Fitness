@@ -42,8 +42,13 @@ data class AppSettings(
     val packLanguage: PackLanguage = PackLanguage.ENGLISH,
     val pinHash: String? = null,
     val pinSalt: String? = null,
+    /** So the pad can check as soon as enough digits are in. */
+    val pinLength: Int? = null,
+    val pinFailures: Int = 0,
+    val pinLockedUntil: Long? = null,
     val biometric: Boolean = false,
     val recoveryCodeHash: String? = null,
+    val recoverySalt: String? = null,
     val backupFolderUri: String? = null,
     val backupPasswordSet: Boolean = false,
     val backupPasswordHint: String? = null,
@@ -100,8 +105,12 @@ class SettingsStore(
             packLanguage = this[PACK_LANGUAGE]?.let(PackLanguage::valueOf) ?: defaults.packLanguage,
             pinHash = this[PIN_HASH],
             pinSalt = this[PIN_SALT],
+            pinLength = this[PIN_LENGTH],
+            pinFailures = this[PIN_FAILURES] ?: defaults.pinFailures,
+            pinLockedUntil = this[PIN_LOCKED_UNTIL],
             biometric = this[BIOMETRIC] ?: defaults.biometric,
             recoveryCodeHash = this[RECOVERY_HASH],
+            recoverySalt = this[RECOVERY_SALT],
             backupFolderUri = this[BACKUP_FOLDER],
             backupPasswordSet = this[BACKUP_PASSWORD_SET] ?: defaults.backupPasswordSet,
             backupPasswordHint = this[BACKUP_HINT],
@@ -136,8 +145,12 @@ class SettingsStore(
         this[PACK_LANGUAGE] = settings.packLanguage.name
         put(PIN_HASH, settings.pinHash)
         put(PIN_SALT, settings.pinSalt)
+        put(PIN_LENGTH, settings.pinLength)
+        this[PIN_FAILURES] = settings.pinFailures
+        put(PIN_LOCKED_UNTIL, settings.pinLockedUntil)
         this[BIOMETRIC] = settings.biometric
         put(RECOVERY_HASH, settings.recoveryCodeHash)
+        put(RECOVERY_SALT, settings.recoverySalt)
         put(BACKUP_FOLDER, settings.backupFolderUri)
         this[BACKUP_PASSWORD_SET] = settings.backupPasswordSet
         put(BACKUP_HINT, settings.backupPasswordHint)
@@ -175,8 +188,12 @@ class SettingsStore(
         val PACK_LANGUAGE = stringPreferencesKey("packLanguage")
         val PIN_HASH = stringPreferencesKey("pinHash")
         val PIN_SALT = stringPreferencesKey("pinSalt")
+        val PIN_LENGTH = intPreferencesKey("pinLength")
+        val PIN_FAILURES = intPreferencesKey("pinFailures")
+        val PIN_LOCKED_UNTIL = longPreferencesKey("pinLockedUntil")
         val BIOMETRIC = booleanPreferencesKey("biometric")
         val RECOVERY_HASH = stringPreferencesKey("recoveryCodeHash")
+        val RECOVERY_SALT = stringPreferencesKey("recoverySalt")
         val BACKUP_FOLDER = stringPreferencesKey("backupFolderUri")
         val BACKUP_PASSWORD_SET = booleanPreferencesKey("backupPasswordSet")
         val BACKUP_HINT = stringPreferencesKey("backupPasswordHint")

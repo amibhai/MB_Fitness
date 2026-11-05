@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.time.LocalDate
 
 /** A previous version of a payment, kept for disputes (SPEC 7.5). */
 @Serializable
@@ -178,6 +179,11 @@ class MemberRepository(
     fun observePlans(): Flow<List<PlanEntity>> = plans.observeAll()
     fun observeActivePlans(): Flow<List<PlanEntity>> = plans.observeActive()
     fun observePaymentsOn(day: Long): Flow<List<PaymentRow>> = payments.observeOnDay(day)
+
+    fun observeCollectedThisMonth(): Flow<Long> {
+        val date = LocalDate.ofEpochDay(clock.today())
+        return payments.observeCollectedBetween(date.withDayOfMonth(1).toEpochDay(), date.toEpochDay())
+    }
 
     // ---- Members ----
 

@@ -74,3 +74,15 @@ Testing notes:
 
 - **`MigrationTest` uses `AndroidSQLiteDriver`.** Why: Room's default driver compares file names in a way that breaks on Windows paths under Robolectric. It doesn't affect the app on a phone.
 - **Schemas are added to debug assets only.** Why: `MigrationTestHelper` reads them from assets, and under Robolectric only the variant's own assets are visible. They never ship in a release.
+
+## 5 Nov 2026: app shell (Phase 3)
+
+- **Testing happens on Swastik's Pixel 8 (Android 17, API 37), not emulators.** Swastik asked for this. It replaces the emulator checks in the plan, and it is the app's exact target version. Any setting changed for a check is restored afterwards. Ask before anything could send a real SMS.
+- **Bottom navigation: Home, Today, SMS, Reports, Settings.** The spec doesn't define top-level navigation, and §3 wants Today's closing and Reports one tap away. Broadcast will be reached from SMS and from multi-select. "Members" and "Messages" were clipped at 130% text on the phone, so they became "Home" and "SMS", and labels now shrink to fit at larger sizes.
+- **Every screen has the dark header bar,** so status bar icons are always light. The UPI QR screen will handle its own white background.
+- **App lock.** Asks on a cold start and after more than 60 seconds away, so a trip to the contact or file picker doesn't re-ask. Five free wrong guesses, then a wait of 30 seconds that doubles up to 15 minutes. The count is stored, so closing the app can't skip it. The PIN length is stored so the pad can check without an OK key.
+- **PIN and recovery code hashing uses PBKDF2-HMAC-SHA256 at 120,000 iterations,** built-in crypto only. The recovery code avoids look-alike characters and ignores case and spacing, since it's copied by hand.
+- **Changing the PIN keeps the existing recovery code,** because that's the one written down.
+- **Debug-only theme hook.** `am start ... --es mbf_theme light|dark|system` sets the night mode for this app alone through `UiModeManager.setApplicationNightMode`. Why: the Pixel 8's system dark mode is locked against `cmd uimode`, and this avoids touching phone settings. It is compiled out of release builds.
+- **Unit tests pin Espresso 3.7.0.** Why: the older version Compose's test library brings in calls a hidden method removed in API 37.
+- **Unused icons are exempt from lint until Phase 8.** See the open items in `docs/PROGRESS.md`.

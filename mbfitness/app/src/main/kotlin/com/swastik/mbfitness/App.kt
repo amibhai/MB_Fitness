@@ -3,8 +3,12 @@ package com.swastik.mbfitness
 import android.app.Application
 import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.swastik.mbfitness.data.AadhaarVault
 import com.swastik.mbfitness.data.AppDatabase
+import com.swastik.mbfitness.data.AppLock
 import com.swastik.mbfitness.data.KeystoreAadhaarVault
 import com.swastik.mbfitness.data.MemberRepository
 import com.swastik.mbfitness.data.SettingsStore
@@ -25,4 +29,22 @@ class App : Application() {
     val settings: SettingsStore by lazy { SettingsStore(settingsDataStore, forceTestMode = BuildConfig.DEBUG) }
     val aadhaarVault: AadhaarVault by lazy { KeystoreAadhaarVault() }
     val members: MemberRepository by lazy { MemberRepository(database, settings, aadhaarVault, clock) }
+    val appLock: AppLock by lazy { AppLock(settings, clock) }
+
+    private var watchingForeground = false
+
+    /**
+     * Called from MainActivity rather than onCreate: this process can start before the first
+     * unlock, when ProcessLifecycleOwner isn't available.
+     */
+    fun watchForeground() {
+        if (watchingForeground) return
+        watchingForeground = true
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) = appLock.onForegrounded()
+                override fun onStop(owner: LifecycleOwner) = appLock.onBackgrounded()
+            },
+        )
+    }
 }

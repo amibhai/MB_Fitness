@@ -17,6 +17,10 @@ class FakeClock(var day: Long, var hour: Int = 10) : TodayProvider {
     private var extraMillis = 0L
     override fun today(): Long = day
     override fun nowMillis(): Long = Dates.millisAt(day, hour) + extraMillis++
+
+    fun advance(millis: Long) {
+        extraMillis += millis
+    }
 }
 
 /** Stands in for the Keystore, which Robolectric doesn't have. Can also fail on demand. */

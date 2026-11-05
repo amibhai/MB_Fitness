@@ -4,4 +4,10 @@
     <issue id="GradleDependency" severity="ignore" />
     <issue id="NewerVersionAvailable" severity="ignore" />
     <issue id="AndroidGradlePluginVersion" severity="ignore" />
+
+    <!-- Icons bundled ahead of the screens that use them. Remove this in Phase 8, so anything
+         still unused gets flagged and deleted. R8 strips them from a release either way. -->
+    <issue id="UnusedResources">
+        <ignore path="**/res/drawable/ic_*.xml" />
+    </issue>
 </lint>

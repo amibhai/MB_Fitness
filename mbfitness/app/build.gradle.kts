@@ -129,6 +129,8 @@ dependencies {
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.androidx.work.testing)
     testImplementation(libs.compose.ui.test.junit4)
+    // The older Espresso that Compose's test library brings in breaks on API 37.
+    testImplementation(libs.androidx.test.espresso)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.androidx.test.runner)

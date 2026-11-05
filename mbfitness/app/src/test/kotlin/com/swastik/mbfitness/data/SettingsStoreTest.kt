@@ -53,8 +53,8 @@ class SettingsStoreTest {
             upiPayeeName = "P", logoFile = "logo.png", reminderHour = 8, reminderMinute = 30, dailyCapParts = 50,
             windowCapParts = 20, simSubscriptionId = 3, renewalRule = RenewalRule.START_FROM_PAYMENT, restartAfterDays = 45,
             quietWeekdays = setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY), morningSummary = false, allClearNotice = false,
-            testMode = true, packLanguage = PackLanguage.HINGLISH, pinHash = "h", pinSalt = "s", biometric = true,
-            recoveryCodeHash = "r", backupFolderUri = "content://x", backupPasswordSet = true, backupPasswordHint = "hint",
+            testMode = true, packLanguage = PackLanguage.HINGLISH, pinHash = "h", pinSalt = "s", pinLength = 4,
+            pinFailures = 2, pinLockedUntil = 9, biometric = true, recoveryCodeHash = "r", recoverySalt = "rs", backupFolderUri = "content://x", backupPasswordSet = true, backupPasswordHint = "hint",
             backupKeyWrapped = "k", backupSalt = "salt", lastBackupDay = 5, lastDailyRunDay = 6, lastDailyRunAt = 7,
             onboardingDone = true,
         )
