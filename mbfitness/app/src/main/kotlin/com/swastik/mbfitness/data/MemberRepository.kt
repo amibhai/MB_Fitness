@@ -593,6 +593,11 @@ class MemberRepository(
 
     // ---- Import (SPEC 7.9) ----
 
+    suspend fun activePlanMonths(): List<Int> = plans.activeMonths()
+
+    /** Members who left over 3 years ago, for the "remove old records?" suggestion (SPEC 12). */
+    fun observeLongGone(): Flow<List<Long>> = members.observeLeftBefore(Dates.addMonths(clock.today(), -OLD_RECORDS_MONTHS))
+
     suspend fun existingPhones(): Map<String, String> =
         members.activeBriefs().associate { it.phone to it.name }
 
@@ -821,6 +826,7 @@ class MemberRepository(
         private const val MESSAGE_RETENTION_MONTHS = 18
         private const val QUIET_DATE_RETENTION_DAYS = 30L
         private const val SEND_LOG_RETENTION_DAYS = 2L
+        private const val OLD_RECORDS_MONTHS = 36
 
         private val plannedKinds = MessageKind.entries.filter { it.isPlanned }
         private val feeReminderKinds = MessageKind.entries.filter { it.isFeeReminder }

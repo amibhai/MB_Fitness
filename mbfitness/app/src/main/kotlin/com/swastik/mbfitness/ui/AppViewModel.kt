@@ -32,22 +32,24 @@ data class AppUiState(
     val settings: AppSettings = AppSettings(),
     val showBrandSplash: Boolean = true,
     val locked: Boolean = false,
+    val databaseDamaged: Boolean = false,
 )
 
 /**
  * What the root of the app shows. Being a ViewModel, it survives rotation, which is what keeps
  * the branded splash to cold starts only (SPEC 10.2 screen 1).
  */
-class AppViewModel(settings: SettingsStore, appLock: AppLock) : ViewModel() {
+class AppViewModel(settings: SettingsStore, appLock: AppLock, databaseDamaged: StateFlow<Boolean>) : ViewModel() {
     private val splashDone = MutableStateFlow(false)
 
     val uiState: StateFlow<AppUiState> =
-        combine(settings.settings, appLock.unlocked, splashDone) { current, unlocked, splash ->
+        combine(settings.settings, appLock.unlocked, splashDone, databaseDamaged) { current, unlocked, splash, damaged ->
             AppUiState(
                 loading = false,
                 settings = current,
                 showBrandSplash = !splash,
                 locked = current.pinHash != null && !unlocked,
+                databaseDamaged = damaged,
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, AppUiState())
 

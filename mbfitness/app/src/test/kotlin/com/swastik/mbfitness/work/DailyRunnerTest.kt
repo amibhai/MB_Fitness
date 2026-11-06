@@ -235,6 +235,44 @@ class DailyRunnerTest {
         assertTrue(logged.single().message, "summary failed" in logged.single().message)
     }
 
+    private fun runnerWith(backup: suspend () -> Boolean = { true }, simMissing: suspend () -> Boolean = { false }) =
+        DailyRunner(env.repository, messages, env.settings, env.clock, kicker, notices, ErrorLogger(env.db, env.clock), backup, simMissing)
+
+    @Test
+    fun aRunTakesTheWeeklyBackupToo() = runTest {
+        configure()
+        var backedUp = 0
+        runnerWith(backup = { backedUp++; true }).run()
+        assertEquals(1, backedUp)
+        assertTrue(notices.problems.isEmpty())
+    }
+
+    @Test
+    fun aBackupThatFailsRaisesAProblemButDoesntStopTheRun() = runTest {
+        configure()
+        member()
+        runnerWith(backup = { false }).run()
+        assertEquals(listOf(ProblemKind.BACKUP_OVERDUE), notices.problems)
+        assertEquals(1, queued().size)
+        assertEquals(today, env.settings.current().lastDailyRunDay)
+    }
+
+    @Test
+    fun aBackupThatThrowsIsLoggedAndTheRunCarriesOn() = runTest {
+        configure()
+        member()
+        runnerWith(backup = { error("Disk gone") }).run()
+        assertEquals(1, queued().size)
+        assertTrue(db.errorLog().observeAll().first().single().message.startsWith("backup failed"))
+    }
+
+    @Test
+    fun aMissingSimRaisesAProblem() = runTest {
+        configure()
+        runnerWith(simMissing = { true }).run()
+        assertEquals(listOf(ProblemKind.SIM_MISSING), notices.problems)
+    }
+
     /** Otherwise the watchdog wouldn't try again and the "stopped" notice could never fire. */
     @Test
     fun aRunThatCouldNotPlanDoesNotCountAsARun() = runTest {

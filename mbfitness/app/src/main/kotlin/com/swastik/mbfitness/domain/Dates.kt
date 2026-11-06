@@ -33,6 +33,7 @@ object Dates {
     private val TIME = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH).withZone(GYM_ZONE)
     private val CSV = DateTimeFormatter.ofPattern("d-M-uuuu", Locale.ENGLISH)
         .withResolverStyle(ResolverStyle.STRICT)
+    private val CSV_OUT = DateTimeFormatter.ofPattern("dd-MM-uuuu", Locale.ENGLISH)
 
     fun of(year: Int, month: Int, day: Int): Long = LocalDate.of(year, month, day).toEpochDay()
 
@@ -68,6 +69,9 @@ object Dates {
     } catch (_: DateTimeParseException) {
         null
     }
+
+    /** Writes DD-MM-YYYY, the same as the import file reads. */
+    fun formatCsv(day: Long): String = CSV_OUT.format(LocalDate.ofEpochDay(day))
 
     /** Someone born on 29 Feb celebrates on 28 Feb in non-leap years (SPEC 8.2). */
     fun isBirthday(dob: Long, today: Long): Boolean {

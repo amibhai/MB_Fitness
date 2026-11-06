@@ -63,9 +63,16 @@ import com.swastik.mbfitness.ui.screens.messages.MessagesScreen
 import com.swastik.mbfitness.ui.screens.payment.PaymentDetailScreen
 import com.swastik.mbfitness.ui.screens.payment.RecordPaymentScreen
 import com.swastik.mbfitness.ui.screens.payment.UpiQrScreen
+import com.swastik.mbfitness.ui.screens.settings.AboutScreen
+import com.swastik.mbfitness.ui.screens.settings.BackupScreen
+import com.swastik.mbfitness.ui.screens.settings.ErrorLogScreen
+import com.swastik.mbfitness.ui.screens.settings.HealthCheckScreen
+import com.swastik.mbfitness.ui.screens.settings.HelpScreen
+import com.swastik.mbfitness.ui.screens.settings.ImportScreen
 import com.swastik.mbfitness.ui.screens.settings.PlansScreen
 import com.swastik.mbfitness.ui.screens.settings.QuietDaysScreen
 import com.swastik.mbfitness.ui.screens.settings.RecycleBinScreen
+import com.swastik.mbfitness.ui.screens.settings.SecurityScreen
 import com.swastik.mbfitness.ui.screens.settings.SettingsScreen
 import com.swastik.mbfitness.ui.screens.settings.TemplatesScreen
 import com.swastik.mbfitness.ui.screens.today.TodayClosingScreen
@@ -127,6 +134,27 @@ data object TemplatesRoute
 @Serializable
 data object QuietDaysRoute
 
+@Serializable
+data object SecurityRoute
+
+@Serializable
+data object ImportRoute
+
+@Serializable
+data object BackupRoute
+
+@Serializable
+data object HealthCheckRoute
+
+@Serializable
+data object ErrorLogRoute
+
+@Serializable
+data object HelpRoute
+
+@Serializable
+data object AboutRoute
+
 private data class TopLevel(val route: Any, val type: KClass<*>, val label: String, @DrawableRes val icon: Int)
 
 private val topLevels = listOf(
@@ -139,7 +167,7 @@ private val topLevels = listOf(
 
 /** Everything behind the lock screen. */
 @Composable
-fun AppNavigation() {
+fun AppNavigation(openImport: Boolean = false, onImportOpened: () -> Unit = {}) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val destination = backStack?.destination
@@ -200,6 +228,7 @@ fun AppNavigation() {
                         onMemberClick = { go(MemberRoute(it)) },
                         onAddMember = { go(AddMemberRoute) },
                         onSmsSelected = { ids -> go(BroadcastRoute(ids.joinToString(","))) },
+                        onBackup = { go(BackupRoute) },
                     )
                 }
                 composable<TodayRoute> { TodayClosingScreen() }
@@ -217,14 +246,42 @@ fun AppNavigation() {
                 }
                 composable<TemplatesRoute> { TemplatesScreen(onBack = { navController.popBackStack() }) }
                 composable<QuietDaysRoute> { QuietDaysScreen(onBack = { navController.popBackStack() }) }
+                composable<SecurityRoute> {
+                    SecurityScreen(onBack = { navController.popBackStack() }, onChangePin = { go(SetPinRoute) })
+                }
+                composable<ImportRoute> {
+                    ImportScreen(onBack = { navController.popBackStack() }, onAddOne = { go(AddMemberRoute) })
+                }
+                composable<BackupRoute> {
+                    BackupScreen(onBack = { navController.popBackStack() })
+                }
+                composable<HealthCheckRoute> {
+                    HealthCheckScreen(
+                        onBack = { navController.popBackStack() },
+                        onSetPin = { go(SetPinRoute) },
+                        onBackup = { go(BackupRoute) },
+                        onMessages = { go(MessagesRoute) },
+                        onSettings = { navController.popBackStack() },
+                        onErrorLog = { go(ErrorLogRoute) },
+                    )
+                }
+                composable<ErrorLogRoute> { ErrorLogScreen(onBack = { navController.popBackStack() }) }
+                composable<HelpRoute> { HelpScreen(onBack = { navController.popBackStack() }) }
+                composable<AboutRoute> { AboutScreen(onBack = { navController.popBackStack() }) }
                 composable<ReportsRoute> { Placeholder("Reports") }
                 composable<SettingsRoute> {
                     SettingsScreen(
                         onSetPin = { go(SetPinRoute) },
+                        onSecurity = { go(SecurityRoute) },
                         onPlans = { go(PlansRoute) },
                         onRecycleBin = { go(RecycleBinRoute) },
                         onTemplates = { go(TemplatesRoute) },
                         onQuietDays = { go(QuietDaysRoute) },
+                        onImport = { go(ImportRoute) },
+                        onBackup = { go(BackupRoute) },
+                        onHealthCheck = { go(HealthCheckRoute) },
+                        onHelp = { go(HelpRoute) },
+                        onAbout = { go(AboutRoute) },
                     )
                 }
                 composable<SetPinRoute> {
@@ -297,6 +354,13 @@ fun AppNavigation() {
                 }
                 composable<PlansRoute> { PlansScreen(onBack = { navController.popBackStack() }) }
                 composable<RecycleBinRoute> { RecycleBinScreen(onBack = { navController.popBackStack() }) }
+            }
+        }
+
+        if (openImport) {
+            LaunchedEffect(Unit) {
+                onImportOpened()
+                navController.navigate(ImportRoute)
             }
         }
 

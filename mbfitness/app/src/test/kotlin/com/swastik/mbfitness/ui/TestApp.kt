@@ -5,22 +5,25 @@ import androidx.room.Room
 import com.swastik.mbfitness.App
 import com.swastik.mbfitness.data.AadhaarVault
 import com.swastik.mbfitness.data.AppDatabase
+import com.swastik.mbfitness.data.BackupFolder
 import com.swastik.mbfitness.data.FakeAadhaarVault
+import com.swastik.mbfitness.data.FakeBackupFolder
 import com.swastik.mbfitness.data.FakeClock
 import com.swastik.mbfitness.data.SettingsStore
 import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.TodayProvider
 import com.swastik.mbfitness.sms.FakeSmsSender
 import com.swastik.mbfitness.sms.SmsSender
+import com.swastik.mbfitness.work.DeviceChecks
 import com.swastik.mbfitness.work.FakeKicker
 import com.swastik.mbfitness.work.FakeNotices
 import com.swastik.mbfitness.work.Notices
 import com.swastik.mbfitness.work.OutboxKicker
+import java.io.File
+import java.nio.file.Files
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import java.io.File
-import java.nio.file.Files
 
 /** The real app, with an in-memory database, a settable clock and no real Keystore. */
 class TestApp : App() {
@@ -47,6 +50,15 @@ class TestApp : App() {
     override val notices: Notices get() = fakeNotices
     override fun createSender(): SmsSender = fakeSender
     override fun createKicker(): OutboxKicker = fakeKicker
+
+    /** Permissions and phone settings as Health check sees them. Change them to test it. */
+    val fakeChecks = FakeDeviceChecks(this)
+    override val deviceChecks: DeviceChecks get() = fakeChecks
+    override fun checkDatabase() = Unit
+
+    val fakeFolder = FakeBackupFolder()
+    override fun createBackupKeyVault(): AadhaarVault = FakeAadhaarVault()
+    override fun createBackupFolder(uri: String): BackupFolder = fakeFolder
 
     /** No alarms or WorkManager in unit tests. */
     override fun onAppOpened() = Unit

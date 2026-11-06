@@ -1,6 +1,7 @@
 package com.swastik.mbfitness.data
 
 import android.content.Context
+import android.database.SQLException
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -40,6 +41,16 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun quietDates(): QuietDateDao
     abstract fun errorLog(): ErrorLogDao
     abstract fun counters(): CounterDao
+    abstract fun backup(): BackupDao
+
+    /** SPEC 12: "ok" from SQLite's own check. Anything else, including an error, means damaged. */
+    fun passesQuickCheck(): Boolean = try {
+        openHelper.readableDatabase.query("PRAGMA quick_check").use { cursor ->
+            cursor.moveToFirst() && cursor.getString(0) == "ok"
+        }
+    } catch (_: SQLException) {
+        false
+    }
 
     companion object {
         const val VERSION = 1
@@ -49,8 +60,10 @@ abstract class AppDatabase : RoomDatabase() {
         /** Every schema change adds one here, with a test (hard rule 7). None yet. */
         val ALL_MIGRATIONS: Array<Migration> = emptyArray()
 
-        fun create(context: Context): AppDatabase =
-            configure(Room.databaseBuilder(context, AppDatabase::class.java, FILE_NAME)).build()
+        fun create(context: Context, onDamaged: () -> Unit): AppDatabase =
+            configure(Room.databaseBuilder(context, AppDatabase::class.java, FILE_NAME))
+                .openHelperFactory(KeepDamagedDatabaseFactory(onDamaged))
+                .build()
 
         fun configure(builder: Builder<AppDatabase>): Builder<AppDatabase> =
             builder.addMigrations(*ALL_MIGRATIONS).addCallback(SeedCallback)

@@ -2,6 +2,7 @@
 <!-- Android 8 to 11, which ignore data_extraction_rules.xml. Same contents. -->
 <full-backup-content>
     <include domain="database" path="." />
+    <exclude domain="database" path="mbfitness.db.damaged" />
     <include domain="file" path="datastore/" />
     <include domain="file" path="logo/" />
 </full-backup-content>

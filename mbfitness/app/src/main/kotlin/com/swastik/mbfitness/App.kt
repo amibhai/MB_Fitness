@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -12,10 +13,14 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import com.swastik.mbfitness.data.AadhaarVault
 import com.swastik.mbfitness.data.AppDatabase
 import com.swastik.mbfitness.data.AppLock
+import com.swastik.mbfitness.data.BackupFolder
+import com.swastik.mbfitness.data.BackupManager
 import com.swastik.mbfitness.data.ErrorLogger
 import com.swastik.mbfitness.data.KeystoreAadhaarVault
+import com.swastik.mbfitness.data.LogoStore
 import com.swastik.mbfitness.data.MemberRepository
 import com.swastik.mbfitness.data.MessageRepository
+import com.swastik.mbfitness.data.SafBackupFolder
 import com.swastik.mbfitness.data.SettingsStore
 import com.swastik.mbfitness.domain.SystemTodayProvider
 import com.swastik.mbfitness.domain.TodayProvider
@@ -23,6 +28,7 @@ import com.swastik.mbfitness.sms.BlockReason
 import com.swastik.mbfitness.sms.SimSmsSender
 import com.swastik.mbfitness.sms.SmsSender
 import com.swastik.mbfitness.work.DailyRunner
+import com.swastik.mbfitness.work.DeviceChecks
 import com.swastik.mbfitness.work.Notices
 import com.swastik.mbfitness.work.OutboxEngine
 import com.swastik.mbfitness.work.OutboxKicker
@@ -30,10 +36,12 @@ import com.swastik.mbfitness.work.ProblemKind
 import com.swastik.mbfitness.work.ReminderScheduling
 import com.swastik.mbfitness.work.SystemNotices
 import com.swastik.mbfitness.work.WorkManagerKicker
+import java.io.File
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /** Lives at files/datastore/settings.preferences_pb, which the backup rules include. */
@@ -70,6 +78,8 @@ open class App : Application() {
     }
     val messages: MessageRepository by lazy { MessageRepository(database, settings, clock) }
     val appLock: AppLock by lazy { AppLock(settings, clock) }
+    val logos: LogoStore by lazy { LogoStore(this, settings) }
+    open val deviceChecks: DeviceChecks by lazy { DeviceChecks(this) }
     val smsSender: SmsSender by lazy { createSender() }
     val notifier: SystemNotices by lazy { SystemNotices(this) }
     open val notices: Notices get() = notifier
@@ -89,13 +99,31 @@ open class App : Application() {
             },
         )
     }
-    val dailyRunner: DailyRunner by lazy { DailyRunner(members, messages, settings, clock, outboxKicker, notices, errors) }
+    val backups: BackupManager by lazy {
+        BackupManager(database, settings, aadhaarVault, createBackupKeyVault(), clock, errors, BuildConfig.VERSION_NAME, backupFilesDir(), ::createBackupFolder)
+    }
+    val dailyRunner: DailyRunner by lazy {
+        DailyRunner(
+            members,
+            messages,
+            settings,
+            clock,
+            outboxKicker,
+            notices,
+            errors,
+            weeklyBackup = backups::runWeeklyIfDue,
+            chosenSimMissing = { deviceChecks.chosenSimMissing(settings.current().simSubscriptionId) },
+        )
+    }
 
-    protected open fun createDatabase(): AppDatabase = AppDatabase.create(this)
+    protected open fun createDatabase(): AppDatabase = AppDatabase.create(this, ::markDatabaseDamaged)
     protected open fun createSettings(): SettingsStore = SettingsStore(settingsDataStore, forceTestMode = BuildConfig.DEBUG)
     protected open fun createVault(): AadhaarVault = KeystoreAadhaarVault()
     protected open fun createSender(): SmsSender = SimSmsSender(this)
     protected open fun createKicker(): OutboxKicker = WorkManagerKicker(this, clock)
+    protected open fun createBackupKeyVault(): AadhaarVault = KeystoreAadhaarVault(BACKUP_KEY_ALIAS)
+    open fun createBackupFolder(uri: String): BackupFolder = DebugHooks.testFolder(this, uri) ?: SafBackupFolder(this, uri.toUri())
+    protected open fun backupFilesDir(): File = filesDir
 
     /** Layer 3 of "reminders must never silently stop" (SPEC 9), on every app open. */
     protected open fun onAppOpened() {
@@ -107,6 +135,39 @@ open class App : Application() {
     }
 
     protected open suspend fun armReminders() = ReminderScheduling.ensureAll(this)
+
+    /** True when the data file is damaged, so the app can offer a restore (SPEC 12). */
+    val databaseDamaged = MutableStateFlow(false)
+
+    private val damageMarker get() = File(filesDir, "database_damaged")
+
+    private fun markDatabaseDamaged() {
+        runCatching { damageMarker.createNewFile() }
+        databaseDamaged.value = true
+    }
+
+    /**
+     * Android deletes a corrupt database as soon as it notices, and starts an empty one, so the
+     * marker is what remembers it. Otherwise this would look like an empty new install.
+     */
+    protected open fun checkDatabase() {
+        backgroundScope.launch {
+            if (damageMarker.exists() || !database.passesQuickCheck()) databaseDamaged.value = true
+        }
+    }
+
+    /** Someone restored a backup, or chose to carry on. */
+    fun clearDatabaseDamage() {
+        damageMarker.delete()
+        databaseDamaged.value = false
+    }
+
+    suspend fun rearmReminders() = armReminders()
+
+    suspend fun afterRestore() {
+        clearDatabaseDamage()
+        armReminders()
+    }
 
     /** The "Fix" button on Home: sets everything up again and does today's run. */
     suspend fun repairReminders() {
@@ -126,6 +187,7 @@ open class App : Application() {
     fun watchForeground() {
         if (watchingForeground) return
         watchingForeground = true
+        checkDatabase()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
@@ -141,5 +203,6 @@ open class App : Application() {
     private companion object {
         /** Just past the thank-you's wait, so it goes as soon as Undo can no longer cancel it. */
         const val THANKS_WAKE_MILLIS = 11_000L
+        const val BACKUP_KEY_ALIAS = "mbf_backup_key"
     }
 }

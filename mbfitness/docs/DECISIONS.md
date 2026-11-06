@@ -127,3 +127,25 @@ Testing notes:
 - **Member detail's buttons became Call and Send SMS on one row, with Freeze below.** Why: three on one row wrapped "Unfreeze" mid-word.
 - **The owner's number is set by a debug hook until Phase 6 builds Settings → Gym.** `am start ... --es mbf_trainer <number>`. It only exists in debug builds.
 - **Debug-only text size hook.** `am start ... --ef mbf_font 1.3` sets the text size for this app alone. Why: changing the phone's own font affects whoever is holding it, and a dropped USB connection could leave it stuck. `MainActivity.attachBaseContext` calls it, and in a release build that does nothing.
+
+## 6 Nov 2026: onboarding, settings, safety (Phase 6)
+
+- **Backups hold the entities as they are, not a separate copy of each table's fields.** Why: a column added later can't be silently left out of backups.
+- **The error log and the send log stay out of backups.** SPEC 12 says "all tables", but these describe this phone, not the gym's data. The send log also has to keep counting what this phone really sent.
+- **The file has a date, not a timestamp.** Why: SPEC 15 wants a byte-identical re-export. That holds for a no-password backup. A password backup uses a fresh IV each time, as AES-GCM must, so its bytes differ while the data inside matches. The test compares the data.
+- **A password backup is never replaced by a plain one.** If the stored key can't be reached, the backup stops and asks for the password again. Why: falling back would quietly undo what the password was for.
+- **SIM, PIN, Test mode and the backup folder are not restored.** They belong to the phone, and restoring Test mode off could start real SMS without anyone asking.
+- **Nothing that was waiting to send survives a restore, and its duplicate key stays.** Why: a weekly backup is taken just as the day's reminders are queued, so those rows are in the file as "queued" although they were sent minutes later. Sending them again after a restore would text everyone twice.
+- **After a restore, nothing runs until tomorrow.** Why: the backup can't show what went out after it was made, and this gives time to look things over. Tomorrow's run catches up, with one truthful SMS per member.
+- **The safety copy before a restore is always kept privately, with Aadhaar sealed,** and also goes to the backup folder if there is one, protected as backups normally are. A broken folder doesn't block a restore, but a failed private copy does. "Undo the last restore" puts it back.
+- **A damaged database file is copied aside and reported.** Why: Android deletes a corrupt database as soon as it notices and starts an empty one, so the app would look like a new install with every member gone, and the spec's `quick_check` at the next start would pass. This needs `androidx.sqlite:sqlite-framework`, at the version Room already uses.
+- **Backup overdue means more than 8 days, and Home only mentions it once there are members.**
+- **Onboarding's test step leaves Test mode alone.** SPEC 11.1 turns it on and off again, but a test SMS only ever goes to the owner's number, and skipping that step would have left Test mode on, with members silently getting nothing.
+- **The restricted-settings guide is numbered steps with an Open App info button, not three pictures.** There are no real screenshots to use, and they'd differ by phone. It can become pictures at handover if needed.
+- **A dual-SIM phone with one SIM in it drops the SIM step.** Android only reveals how many SIMs are active after a permission, so the step can appear, then remove itself.
+- **Settings groups backup, restore, CSV, folder and password on one screen** rather than as separate rows in the Data section. Why: they're used together and belong near their explanation.
+- **Changing or removing the PIN asks for the current one first.** This closes the open item from Phase 3. The fingerprint can answer it too, the same as for showing an Aadhaar number.
+- **Exports start with a byte-order mark,** so Excel reads Hindi names properly. Names starting with `=`, `+`, `-` or `@` get an apostrophe, so they can't run as a formula in Excel.
+- **A member export has the import file's columns first,** so it can go straight back in.
+- **"Remove old records?" moves members to the recycle bin, not out of the app.** Why: SPEC 12 says never automatic, and this leaves 30 days to change your mind. It comes last among Home's banners.
+- **Debug-only hooks for checks on the phone:** a backup folder inside the app's own storage, a member with a made-up Aadhaar number, and skipping onboarding. None of them ship.

@@ -91,6 +91,8 @@ enum class ProblemKind(val id: Int, val title: String, val detail: String) {
     SMS_PERMISSION(101, "SMS permission is off", "Reminders can't go until it's back on. Tap to fix."),
     NO_TRAINER_NUMBER(102, "Add your phone number", "Test mode needs it before any SMS can go."),
     REMINDERS_STOPPED(103, "Reminders haven't run for 2 days", "Tap to check what's wrong."),
+    BACKUP_OVERDUE(104, "Backup didn't work", "This week's backup couldn't be made. Tap to fix."),
+    SIM_MISSING(105, "Your chosen SIM isn't there", "Reminders are using the phone's default SIM. Tap to check."),
 }
 
 data class DailyRunResult(val plan: PlanResult?, val summary: SummaryText?)
@@ -107,6 +109,9 @@ class DailyRunner(
     private val kicker: OutboxKicker,
     private val notices: Notices,
     private val errors: ErrorLogger,
+    /** False means a backup was due and couldn't be made. */
+    private val weeklyBackup: suspend () -> Boolean = { true },
+    private val chosenSimMissing: suspend () -> Boolean = { false },
 ) {
     suspend fun runIfDue(): Boolean {
         val current = settings.current()
@@ -126,7 +131,9 @@ class DailyRunner(
         step("housekeeping") { members.housekeeping() }
         val plan = step("planning") { messages.planAndQueue(ignoreQuietDay) }
         step("outbox") { kicker.kick() }
-        // Weekly backup joins here in Phase 6, and the widget refresh in Phase 7.
+        step("backup") { if (!weeklyBackup()) notices.problem(ProblemKind.BACKUP_OVERDUE) }
+        step("sim") { if (chosenSimMissing()) notices.problem(ProblemKind.SIM_MISSING) }
+        // The widget refresh joins here in Phase 7.
         val summary = plan?.let { step("summary") { postSummary(it, ignoreQuietDay) } }
         if (plan != null) {
             step("finish") {

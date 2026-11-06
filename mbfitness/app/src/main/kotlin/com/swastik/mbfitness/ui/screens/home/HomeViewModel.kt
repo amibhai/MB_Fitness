@@ -6,6 +6,7 @@ import com.swastik.mbfitness.data.AppSettings
 import com.swastik.mbfitness.data.MemberRepository
 import com.swastik.mbfitness.data.MemberRow
 import com.swastik.mbfitness.data.SettingsStore
+import com.swastik.mbfitness.domain.BackupRules
 import com.swastik.mbfitness.domain.MemberRules
 import com.swastik.mbfitness.domain.MemberState
 import com.swastik.mbfitness.domain.MemberTab
@@ -35,10 +36,14 @@ data class MemberListItem(
     val advance: Long,
 )
 
-/** One at a time, by priority (SPEC 10.2 screen 3). Backup overdue joins in Phase 6. */
+/** One at a time, by priority (SPEC 10.2 screen 3). */
 sealed interface HomeBanner {
     data object SmsPermissionOff : HomeBanner
     data object RemindersStopped : HomeBanner
+    data class BackupOverdue(val folderChosen: Boolean) : HomeBanner
+
+    /** Left over 3 years ago. Never automatic: this only suggests it (SPEC 12). */
+    data class OldRecords(val memberIds: List<Long>) : HomeBanner
 
     /** Never automatic: this only suggests it (SPEC 4-A). */
     data class LongOverdue(val memberIds: Set<Long>) : HomeBanner
@@ -65,6 +70,8 @@ data class HomeUiState(
 
 private data class Filters(val query: String, val tab: MemberTab, val selection: Set<Long>)
 
+private data class HomeData(val settings: AppSettings, val rows: List<MemberRow>, val collected: Long, val longGone: List<Long>)
+
 class HomeViewModel(
     private val members: MemberRepository,
     private val settings: SettingsStore,
@@ -79,10 +86,14 @@ class HomeViewModel(
 
     private val filters = combine(query, tab, selection) { q, t, s -> Filters(q, t, s) }
 
+    private val longGone = members.observeLongGone()
+
+    private val data = combine(settings.settings, members.observeMembers(), members.observeCollectedThisMonth(), longGone) { current, rows, collected, gone ->
+        HomeData(current, rows, collected, gone)
+    }
+
     val uiState: StateFlow<HomeUiState> =
-        combine(settings.settings, members.observeMembers(), members.observeCollectedThisMonth(), filters, tick) { current, rows, collected, filter, _ ->
-            build(current, rows, collected, filter)
-        }
+        combine(data, filters, tick) { source, filter, _ -> build(source.settings, source.rows, source.collected, source.longGone, filter) }
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), HomeUiState(today = clock.today()))
 
@@ -122,7 +133,12 @@ class HomeViewModel(
         viewModelScope.launch { ids.forEach { members.markLeft(it) } }
     }
 
-    private fun build(current: AppSettings, rows: List<MemberRow>, collected: Long, filter: Filters): HomeUiState {
+    /** Into the recycle bin, so there are still 30 days to change your mind. */
+    fun removeOldRecords(ids: List<Long>) {
+        viewModelScope.launch { ids.forEach { members.deleteMember(it) } }
+    }
+
+    private fun build(current: AppSettings, rows: List<MemberRow>, collected: Long, longGone: List<Long>, filter: Filters): HomeUiState {
         val today = clock.today()
         val withTabs = rows.map { it to MemberRules.tab(it.status, it.expiryDate, today) }
         val items = withTabs
@@ -141,7 +157,10 @@ class HomeViewModel(
         val banner = when {
             !canSendSms() -> HomeBanner.SmsPermissionOff
             runHealth == RunHealth.VERY_LATE -> HomeBanner.RemindersStopped
+            // Nothing to protect until there are members.
+            rows.isNotEmpty() && BackupRules.isOverdue(today, current.lastBackupDay) -> HomeBanner.BackupOverdue(current.backupFolderUri != null)
             longOverdue.isNotEmpty() -> HomeBanner.LongOverdue(longOverdue)
+            longGone.isNotEmpty() -> HomeBanner.OldRecords(longGone)
             else -> null
         }
         return HomeUiState(

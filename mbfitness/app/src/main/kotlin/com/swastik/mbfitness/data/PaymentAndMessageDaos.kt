@@ -234,6 +234,9 @@ interface ErrorLogDao {
     @Query("DELETE FROM error_log WHERE id NOT IN (SELECT id FROM error_log ORDER BY id DESC LIMIT :keep)")
     suspend fun trim(keep: Int)
 
+    @Query("SELECT COUNT(*) FROM error_log")
+    suspend fun count(): Int
+
     @Query("SELECT * FROM error_log ORDER BY id DESC")
     fun observeAll(): Flow<List<ErrorLogEntity>>
 }

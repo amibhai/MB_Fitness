@@ -74,6 +74,15 @@ class AppLock(
         }
     }
 
+    /** The old code stops working. The new one is shown once, and only a hash is kept. */
+    suspend fun replaceRecoveryCode(): String = withContext(Dispatchers.Default) {
+        val salt = SecretHasher.newSalt()
+        val code = PinRules.newRecoveryCode()
+        val hash = SecretHasher.hash(PinRules.normalizeRecoveryCode(code), salt)
+        settings.update { it.copy(recoveryCodeHash = hash, recoverySalt = salt) }
+        code
+    }
+
     suspend fun removePin() {
         settings.update {
             it.copy(

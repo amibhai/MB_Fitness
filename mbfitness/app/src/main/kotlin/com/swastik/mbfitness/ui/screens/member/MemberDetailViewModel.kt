@@ -11,6 +11,7 @@ import com.swastik.mbfitness.data.PaymentEntity
 import com.swastik.mbfitness.data.SettingsStore
 import com.swastik.mbfitness.domain.MemberRules
 import com.swastik.mbfitness.domain.MemberTab
+import com.swastik.mbfitness.domain.PaymentKind
 import com.swastik.mbfitness.domain.TodayProvider
 import com.swastik.mbfitness.work.OutboxKicker
 import kotlinx.coroutines.Job
@@ -76,7 +77,8 @@ class MemberDetailViewModel(
                 tab = member?.let { MemberRules.tab(it.status, it.expiryDate, clock.today()) } ?: MemberTab.PAID,
                 due = MemberRules.due(balance),
                 advance = MemberRules.advance(balance),
-                payments = record.payments,
+                // These only exist so replays stay consistent, and mean nothing to read.
+                payments = record.payments.filterNot { it.kind == PaymentKind.OPENING && it.charged == 0L && it.paid == 0L },
                 messages = record.messages.take(MESSAGES_SHOWN),
                 aadhaar = aadhaarRow(member?.aadhaarLast4, shown),
                 pinSet = current.pinHash != null,

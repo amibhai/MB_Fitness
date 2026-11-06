@@ -102,12 +102,13 @@ private fun emptyLine(tab: MemberTab): String = when (tab) {
 
 /** SPEC 10.2 screen 3. */
 @Composable
-fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit, onSmsSelected: (Set<Long>) -> Unit) {
+fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit, onSmsSelected: (Set<Long>) -> Unit, onBackup: () -> Unit) {
     val viewModel = appViewModel { app ->
         HomeViewModel(app.members, app.settings, app.clock, app::canSendSms, app::repairReminders)
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var confirmLeft by remember { mutableStateOf(false) }
+    var confirmOldRecords by remember { mutableStateOf<List<Long>?>(null) }
     val snackbar = LocalSnackbar.current
     // Keeps Add member reachable while a snackbar shows, for adding several members in a row.
     val fabLift by animateDpAsState(
@@ -152,7 +153,7 @@ fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit, onSmsSele
                     },
                 )
             }
-            MemberList(state, viewModel, onMemberClick)
+            MemberList(state, viewModel, onMemberClick, onBackup, onOldRecords = { confirmOldRecords = it })
         }
         if (state.selection.isEmpty()) {
             ExtendedFloatingActionButton(
@@ -168,6 +169,21 @@ fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit, onSmsSele
                 text = { Text("Add member", style = MbType.Label) },
             )
         }
+    }
+
+    confirmOldRecords?.let { ids ->
+        ConfirmDialog(
+            title = "Remove old records?",
+            message = "${if (ids.size == 1) "1 member goes" else "${ids.size} members go"} to the recycle bin, with all their payments. You have 30 days to change your mind.",
+            confirmLabel = "Remove",
+            danger = true,
+            dismissLabel = "Keep them",
+            onConfirm = {
+                confirmOldRecords = null
+                viewModel.removeOldRecords(ids)
+            },
+            onDismiss = { confirmOldRecords = null },
+        )
     }
 
     if (confirmLeft) {
@@ -186,7 +202,13 @@ fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit, onSmsSele
 }
 
 @Composable
-private fun MemberList(state: HomeUiState, viewModel: HomeViewModel, onMemberClick: (Long) -> Unit) {
+private fun MemberList(
+    state: HomeUiState,
+    viewModel: HomeViewModel,
+    onMemberClick: (Long) -> Unit,
+    onBackup: () -> Unit,
+    onOldRecords: (List<Long>) -> Unit,
+) {
     val selecting = state.selection.isNotEmpty()
     val snackbar = LocalSnackbar.current
     val requestPermission = rememberSmsPermissionRequest { viewModel.onResume() }
@@ -231,6 +253,21 @@ private fun MemberList(state: HomeUiState, viewModel: HomeViewModel, onMemberCli
                         actionLabel = "Fix",
                         onAction = fix,
                     )
+                    is HomeBanner.BackupOverdue -> MbBanner(
+                        if (banner.folderChosen) "Your backup is overdue." else "Your data has no backup yet.",
+                        BannerTone.WARNING,
+                        actionLabel = if (banner.folderChosen) "Back up" else "Set up",
+                        onAction = onBackup,
+                    )
+                    is HomeBanner.OldRecords -> {
+                        val count = banner.memberIds.size
+                        MbBanner(
+                            "$count ${if (count == 1) "member" else "members"} left over 3 years ago. Remove old records?",
+                            BannerTone.INFO,
+                            actionLabel = "Review",
+                            onAction = { onOldRecords(banner.memberIds) },
+                        )
+                    }
                     is HomeBanner.LongOverdue -> {
                         val count = banner.memberIds.size
                         MbBanner(

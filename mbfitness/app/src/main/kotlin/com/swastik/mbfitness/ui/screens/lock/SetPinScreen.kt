@@ -157,7 +157,7 @@ private fun PinEntry(state: SetPinUiState, viewModel: SetPinViewModel) {
 
 /** Shown once. Screenshots are blocked while it's on screen. */
 @Composable
-private fun RecoveryCode(code: String, onDone: () -> Unit) {
+fun RecoveryCode(code: String, onDone: () -> Unit) {
     val colors = MbTheme.colors
     SecureWindow()
     Text("Write this down", style = MbType.Title, color = colors.textPrimary, textAlign = TextAlign.Center)

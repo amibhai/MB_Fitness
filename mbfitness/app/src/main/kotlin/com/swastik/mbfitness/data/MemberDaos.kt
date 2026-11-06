@@ -71,6 +71,9 @@ interface PlanDao {
     @Query("SELECT * FROM plans WHERE months = :months AND isActive = 1 ORDER BY sortOrder, id LIMIT 1")
     suspend fun activeWithMonths(months: Int): PlanEntity?
 
+    @Query("SELECT months FROM plans WHERE isActive = 1")
+    suspend fun activeMonths(): List<Int>
+
     @Query("SELECT COALESCE(MAX(sortOrder), 0) FROM plans")
     suspend fun maxSortOrder(): Int
 
@@ -125,6 +128,19 @@ interface MemberDao {
 
     @Query("SELECT id, name, phone FROM members WHERE deletedAt IS NULL")
     suspend fun activeBriefs(): List<MemberBrief>
+
+    /** Members who left before [before], going by the latest time they left. */
+    @Query(
+        """
+        SELECT m.id FROM members m
+        WHERE m.status = 'LEFT' AND m.deletedAt IS NULL
+        AND (SELECT MAX(e.date) FROM member_events e WHERE e.memberId = m.id AND e.type = 'LEFT') < :before
+        """,
+    )
+    fun observeLeftBefore(before: Long): Flow<List<Long>>
+
+    @Query("SELECT COUNT(*) FROM members WHERE aadhaarLast4 IS NOT NULL AND deletedAt IS NULL")
+    suspend fun countWithAadhaar(): Int
 
     @Query("SELECT id, name, phone, aadhaarEnc FROM members WHERE deletedAt IS NULL AND aadhaarLast4 = :last4 AND id != :exceptId")
     suspend fun aadhaarCandidates(last4: String, exceptId: Long): List<AadhaarCandidate>

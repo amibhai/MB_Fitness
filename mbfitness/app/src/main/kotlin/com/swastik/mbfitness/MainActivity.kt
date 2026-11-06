@@ -27,7 +27,7 @@ class MainActivity : FragmentActivity() {
         viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as App
-                AppViewModel(app.settings, app.appLock)
+                AppViewModel(app.settings, app.appLock, app.databaseDamaged)
             }
         }
     }

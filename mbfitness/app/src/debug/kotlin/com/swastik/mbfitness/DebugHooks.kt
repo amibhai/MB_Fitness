@@ -5,10 +5,14 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
+import com.swastik.mbfitness.data.BackupFolder
+import com.swastik.mbfitness.data.MemberDraft
+import com.swastik.mbfitness.domain.Aadhaar
 import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.ImportRow
 import com.swastik.mbfitness.domain.MessageStatus
 import com.swastik.mbfitness.domain.PhoneNumbers
+import java.io.File
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
@@ -21,6 +25,9 @@ import kotlinx.coroutines.launch
  *   am start -n com.swastik.mbfitness/.MainActivity --ei mbf_seed 300
  *   am start -n com.swastik.mbfitness/.MainActivity --ei mbf_seed 40 --ez mbf_consent true
  *   am start -n com.swastik.mbfitness/.MainActivity --ei mbf_fail 2
+ *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_onboarded true
+ *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_test_folder true
+ *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_fake_aadhaar true
  *   am start -n com.swastik.mbfitness/.MainActivity --es mbf_upi gymowner@okbank
  *   am start -n com.swastik.mbfitness/.MainActivity --es mbf_trainer 98xxxxxxxx
  */
@@ -28,6 +35,38 @@ object DebugHooks {
     private const val SEED_PHONE_BASE = 9_000_000_000L
     private const val PREFS = "mbf_debug"
     private const val FONT_KEY = "font"
+
+    private const val TEST_FOLDER = "debug-test-folder"
+
+    /** Inside this app's own storage, so a check never writes to the owner's files. */
+    fun testFolder(app: App, uri: String): BackupFolder? =
+        if (uri == TEST_FOLDER) FileBackupFolder(File(app.filesDir, TEST_FOLDER)) else null
+
+    private class FileBackupFolder(private val folder: File) : BackupFolder {
+        override fun isUsable() = folder.mkdirs() || folder.isDirectory
+        override fun names() = folder.list().orEmpty().toList()
+        override fun read(name: String) = File(folder, name).takeIf { it.exists() }?.readBytes()
+
+        override fun write(name: String, bytes: ByteArray) {
+            folder.mkdirs()
+            File(folder, name).writeBytes(bytes)
+        }
+
+        override fun delete(name: String) {
+            File(folder, name).delete()
+        }
+    }
+
+    /** UIDAI's test range, so it's never a real person's. Set here so it stays out of adb commands. */
+    private const val FAKE_AADHAAR = "999900000016"
+
+    private fun addFakeAadhaar(app: App) {
+        MainScope().launch {
+            val aadhaar = (Aadhaar.parse(FAKE_AADHAAR) as Aadhaar.ParseResult.Valid).aadhaar
+            val draft = MemberDraft("Aadhaar Test", "9000000500", 1, app.clock.today() + 30, aadhaar = aadhaar, aadhaarConsent = true)
+            app.members.addMember(draft)
+        }
+    }
 
     /** A theme change recreates the activity, and that mustn't run these a second time. */
     private var oneOffsDone = false
@@ -53,8 +92,15 @@ object DebugHooks {
         applyFontOverride(activity)
         if (oneOffsDone) return
         oneOffsDone = true
+        if (activity.intent.getBooleanExtra("mbf_onboarded", false)) {
+            MainScope().launch { (activity.application as App).settings.update { it.copy(onboardingDone = true) } }
+        }
         val seed = activity.intent.getIntExtra("mbf_seed", 0)
         if (seed > 0) seedMembers(activity.application as App, seed, activity.intent.getBooleanExtra("mbf_consent", false))
+        if (activity.intent.getBooleanExtra("mbf_fake_aadhaar", false)) addFakeAadhaar(activity.application as App)
+        if (activity.intent.getBooleanExtra("mbf_test_folder", false)) {
+            MainScope().launch { (activity.application as App).settings.update { it.copy(backupFolderUri = TEST_FOLDER) } }
+        }
         val fail = activity.intent.getIntExtra("mbf_fail", 0)
         if (fail > 0) failQueued(activity.application as App, fail)
         activity.intent.getStringExtra("mbf_upi")?.let { upi ->

@@ -11,6 +11,7 @@ import com.swastik.mbfitness.domain.MessageStatus
 import com.swastik.mbfitness.domain.PaymentKind
 import com.swastik.mbfitness.domain.PaymentMode
 import com.swastik.mbfitness.domain.RenewalRule
+import kotlinx.serialization.Serializable
 
 /*
  * The tables from SPEC 6. Dates are epoch days and money is whole rupees (hard rule 5), except
@@ -18,6 +19,7 @@ import com.swastik.mbfitness.domain.RenewalRule
  */
 
 @Entity(tableName = "plans")
+@Serializable
 data class PlanEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
@@ -38,6 +40,7 @@ data class PlanEntity(
         Index(value = ["activePhone"], unique = true),
     ],
 )
+@Serializable
 data class MemberEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
@@ -87,6 +90,7 @@ data class MemberEntity(
         Index(value = ["receiptNo"], unique = true),
     ],
 )
+@Serializable
 data class PaymentEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     /** Null only for OPENING rows, which record a starting balance rather than money received. */
@@ -125,6 +129,7 @@ data class PaymentEntity(
     ],
     indices = [Index("memberId")],
 )
+@Serializable
 data class FreezeEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val memberId: Long,
@@ -144,6 +149,7 @@ data class FreezeEntity(
     ],
     indices = [Index("memberId"), Index("type", "date")],
 )
+@Serializable
 data class MemberEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val memberId: Long,
@@ -169,6 +175,7 @@ data class MemberEventEntity(
         Index(value = ["dedupeKey"], unique = true),
     ],
 )
+@Serializable
 data class MessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val memberId: Long?,
@@ -199,6 +206,7 @@ data class MessageEntity(
 )
 
 @Entity(tableName = "templates")
+@Serializable
 data class TemplateEntity(
     @PrimaryKey val type: MessageKind,
     val body: String,
@@ -209,6 +217,7 @@ data class TemplateEntity(
 )
 
 @Entity(tableName = "broadcasts")
+@Serializable
 data class BroadcastEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val body: String,
@@ -231,6 +240,7 @@ data class SendAttemptEntity(
 )
 
 @Entity(tableName = "quiet_dates", indices = [Index(value = ["date"], unique = true)])
+@Serializable
 data class QuietDateEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val date: Long,
@@ -250,6 +260,7 @@ data class ErrorLogEntity(
  * receipt number lives here rather than in DataStore (docs/DECISIONS.md).
  */
 @Entity(tableName = "counters")
+@Serializable
 data class CounterEntity(
     @PrimaryKey val name: String,
     val value: Long,

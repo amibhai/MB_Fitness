@@ -128,4 +128,12 @@ class AppLockTest {
         assertFalse(settings.biometric)
         assertFalse(lock.checkRecoveryCode(code))
     }
+
+    @Test
+    fun aNewRecoveryCodeReplacesTheOldOne() = runTest {
+        val old = lock.setPin("1234", newRecoveryCode = true)!!
+        val fresh = lock.replaceRecoveryCode()
+        assertFalse(lock.checkRecoveryCode(old))
+        assertTrue(lock.checkRecoveryCode(fresh))
+    }
 }
