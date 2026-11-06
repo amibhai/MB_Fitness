@@ -39,7 +39,23 @@ Raise `versionCode` in `app/build.gradle.kts` for every build you give bhaiya. `
 - [ ] Replace the placeholder launcher icon if you have a real logo. The logo inside the app is picked in Settings.
 - [ ] Register `com.swastik.mbfitness` with the release key in a free **limited distribution** account in the Android Developer Console, before 2027. Installs on certified phones need this once enforcement starts. USB installs stay exempt.
 
-## 4. Install on bhaiya's phone, in person
+## 4. Install on bhaiya's phone
+
+### Without USB
+
+The file to send is `mbfitness/dist/MB-Fitness-Club-1.0.0.apk`. It's the signed release, renamed, and git-ignored like every APK. A copy is also in your Pixel's Downloads folder.
+
+1. Send it to him. Google Drive is the most reliable: upload the file, then share the link on WhatsApp, and he opens it in the Drive app. Sending the file itself on WhatsApp works too, and so does Quick Share if you're together.
+2. On his phone, open the file. Android asks to let that app (Drive, WhatsApp or Files) install apps: allow it, then tap **Install**.
+3. If Play Protect warns about an unknown app, tap **More details**, then **Install anyway**. Don't turn Play Protect off.
+4. Open the app and start onboarding. At the SMS step, Android will block the permission, because the app didn't come from a store. Onboarding then shows the way round it: App info, the three dots, **Allow restricted settings**, then allow SMS.
+5. Afterwards, switch "Install unknown apps" off again for the app he installed it from (Settings, Apps, Special app access).
+
+Updates work the same way: build with a higher `versionCode`, send the new file, and he taps **Update**. His data stays, because the key is the same.
+
+**Developer verification matters more without USB.** Once Google's checks reach India (planned for 2027), certified phones will refuse to install or update downloaded apps from unverified developers, and only USB installs stay exempt. Register `com.swastik.mbfitness` before then, using the fingerprint in section 1.
+
+### Over USB, in person
 
 1. On his phone: Settings, About, tap Build number 7 times. Then Developer options, turn on **USB debugging**.
 2. Connect to your laptop and run `adb install -r app/build/outputs/apk/release/app-release.apk`.
