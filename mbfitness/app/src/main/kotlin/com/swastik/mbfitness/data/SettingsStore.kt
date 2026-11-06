@@ -7,11 +7,13 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.swastik.mbfitness.domain.MemberRules
 import com.swastik.mbfitness.domain.PackLanguage
 import com.swastik.mbfitness.domain.Pacing
+import com.swastik.mbfitness.domain.ReminderSchedule
 import com.swastik.mbfitness.domain.RenewalRule
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -59,6 +61,12 @@ data class AppSettings(
     val lastDailyRunDay: Long? = null,
     val lastDailyRunAt: Long? = null,
     val onboardingDone: Boolean = false,
+    /** When setup finished, so "reminders have stopped" can show even if they never ran once. */
+    val setupDoneAt: Long? = null,
+    /** The day a backup was last sent off the phone with "Send a copy". */
+    val lastCopySentDay: Long? = null,
+    /** The settings file was found damaged and started again, so setup asks for them again. */
+    val settingsReset: Boolean = false,
 )
 
 /**
@@ -83,6 +91,10 @@ class SettingsStore(
 
     private fun Preferences.toSettings(): AppSettings {
         val defaults = AppSettings()
+        val hour = this[REMINDER_HOUR] ?: defaults.reminderHour
+        val minute = this[REMINDER_MINUTE] ?: defaults.reminderMinute
+        // A time reminders can't go at would make every alarm or send fail, so it can't get through.
+        val timeAllowed = ReminderSchedule.isAllowedTime(hour, minute)
         return AppSettings(
             gymName = this[GYM_NAME] ?: defaults.gymName,
             ownerName = this[OWNER_NAME] ?: defaults.ownerName,
@@ -91,18 +103,18 @@ class SettingsStore(
             upiId = this[UPI_ID] ?: defaults.upiId,
             upiPayeeName = this[UPI_PAYEE] ?: defaults.upiPayeeName,
             logoFile = this[LOGO_FILE],
-            reminderHour = this[REMINDER_HOUR] ?: defaults.reminderHour,
-            reminderMinute = this[REMINDER_MINUTE] ?: defaults.reminderMinute,
-            dailyCapParts = this[DAILY_CAP] ?: defaults.dailyCapParts,
-            windowCapParts = this[WINDOW_CAP] ?: defaults.windowCapParts,
+            reminderHour = if (timeAllowed) hour else defaults.reminderHour,
+            reminderMinute = if (timeAllowed) minute else defaults.reminderMinute,
+            dailyCapParts = this[DAILY_CAP]?.takeIf { it > 0 } ?: defaults.dailyCapParts,
+            windowCapParts = this[WINDOW_CAP]?.takeIf { it > 0 } ?: defaults.windowCapParts,
             simSubscriptionId = this[SIM_ID],
-            renewalRule = this[RENEWAL_RULE]?.let(RenewalRule::valueOf) ?: defaults.renewalRule,
-            restartAfterDays = this[RESTART_DAYS] ?: defaults.restartAfterDays,
-            quietWeekdays = this[QUIET_WEEKDAYS]?.map(DayOfWeek::valueOf)?.toSet() ?: defaults.quietWeekdays,
+            renewalRule = this[RENEWAL_RULE].named(RenewalRule.entries) ?: defaults.renewalRule,
+            restartAfterDays = this[RESTART_DAYS]?.coerceAtLeast(0) ?: defaults.restartAfterDays,
+            quietWeekdays = this[QUIET_WEEKDAYS]?.mapNotNull { it.named(DayOfWeek.entries) }?.toSet() ?: defaults.quietWeekdays,
             morningSummary = this[MORNING_SUMMARY] ?: defaults.morningSummary,
             allClearNotice = this[ALL_CLEAR] ?: defaults.allClearNotice,
             testMode = this[TEST_MODE] ?: defaults.testMode,
-            packLanguage = this[PACK_LANGUAGE]?.let(PackLanguage::valueOf) ?: defaults.packLanguage,
+            packLanguage = this[PACK_LANGUAGE].named(PackLanguage.entries) ?: defaults.packLanguage,
             pinHash = this[PIN_HASH],
             pinSalt = this[PIN_SALT],
             pinLength = this[PIN_LENGTH],
@@ -120,6 +132,9 @@ class SettingsStore(
             lastDailyRunDay = this[LAST_RUN_DAY],
             lastDailyRunAt = this[LAST_RUN_AT],
             onboardingDone = this[ONBOARDING_DONE] ?: defaults.onboardingDone,
+            setupDoneAt = this[SETUP_DONE_AT],
+            lastCopySentDay = this[LAST_COPY_SENT_DAY],
+            settingsReset = this[SETTINGS_RESET] ?: defaults.settingsReset,
         )
     }
 
@@ -160,48 +175,64 @@ class SettingsStore(
         put(LAST_RUN_DAY, settings.lastDailyRunDay)
         put(LAST_RUN_AT, settings.lastDailyRunAt)
         this[ONBOARDING_DONE] = settings.onboardingDone
+        put(SETUP_DONE_AT, settings.setupDoneAt)
+        put(LAST_COPY_SENT_DAY, settings.lastCopySentDay)
+        this[SETTINGS_RESET] = settings.settingsReset
     }
+
+    /** A value written by a newer version, or damaged, falls back to the default instead of crashing. */
+    private fun <E : Enum<E>> String?.named(entries: List<E>): E? = this?.let { name -> entries.firstOrNull { it.name == name } }
 
     private fun <T> MutablePreferences.put(key: Preferences.Key<T>, value: T?) {
         if (value == null) remove(key) else this[key] = value
     }
 
-    private companion object {
-        val GYM_NAME = stringPreferencesKey("gymName")
-        val OWNER_NAME = stringPreferencesKey("ownerName")
-        val GREETING = stringPreferencesKey("greeting")
-        val TRAINER_PHONE = stringPreferencesKey("trainerPhone")
-        val UPI_ID = stringPreferencesKey("upiId")
-        val UPI_PAYEE = stringPreferencesKey("upiPayeeName")
-        val LOGO_FILE = stringPreferencesKey("logoFile")
-        val REMINDER_HOUR = intPreferencesKey("reminderHour")
-        val REMINDER_MINUTE = intPreferencesKey("reminderMinute")
-        val DAILY_CAP = intPreferencesKey("dailyCapParts")
-        val WINDOW_CAP = intPreferencesKey("windowCapParts")
-        val SIM_ID = intPreferencesKey("simSubscriptionId")
-        val RENEWAL_RULE = stringPreferencesKey("renewalRule")
-        val RESTART_DAYS = intPreferencesKey("restartAfterDays")
-        val QUIET_WEEKDAYS = stringSetPreferencesKey("quietWeekdays")
-        val MORNING_SUMMARY = booleanPreferencesKey("morningSummary")
-        val ALL_CLEAR = booleanPreferencesKey("allClearNotice")
-        val TEST_MODE = booleanPreferencesKey("testMode")
-        val PACK_LANGUAGE = stringPreferencesKey("packLanguage")
-        val PIN_HASH = stringPreferencesKey("pinHash")
-        val PIN_SALT = stringPreferencesKey("pinSalt")
-        val PIN_LENGTH = intPreferencesKey("pinLength")
-        val PIN_FAILURES = intPreferencesKey("pinFailures")
-        val PIN_LOCKED_UNTIL = longPreferencesKey("pinLockedUntil")
-        val BIOMETRIC = booleanPreferencesKey("biometric")
-        val RECOVERY_HASH = stringPreferencesKey("recoveryCodeHash")
-        val RECOVERY_SALT = stringPreferencesKey("recoverySalt")
-        val BACKUP_FOLDER = stringPreferencesKey("backupFolderUri")
-        val BACKUP_PASSWORD_SET = booleanPreferencesKey("backupPasswordSet")
-        val BACKUP_HINT = stringPreferencesKey("backupPasswordHint")
-        val BACKUP_KEY = stringPreferencesKey("backupKeyWrapped")
-        val BACKUP_SALT = stringPreferencesKey("backupSalt")
-        val LAST_BACKUP_DAY = longPreferencesKey("lastBackupDay")
-        val LAST_RUN_DAY = longPreferencesKey("lastDailyRunDay")
-        val LAST_RUN_AT = longPreferencesKey("lastDailyRunAt")
-        val ONBOARDING_DONE = booleanPreferencesKey("onboardingDone")
+    companion object {
+        /**
+         * What a damaged settings file is replaced with: the defaults, and a note saying so. A
+         * damaged file would otherwise stop the app opening at all. Members and payments are in
+         * the database, so they're untouched.
+         */
+        fun afterDamage(): Preferences = mutablePreferencesOf(SETTINGS_RESET to true)
+
+        private val GYM_NAME = stringPreferencesKey("gymName")
+        private val OWNER_NAME = stringPreferencesKey("ownerName")
+        private val GREETING = stringPreferencesKey("greeting")
+        private val TRAINER_PHONE = stringPreferencesKey("trainerPhone")
+        private val UPI_ID = stringPreferencesKey("upiId")
+        private val UPI_PAYEE = stringPreferencesKey("upiPayeeName")
+        private val LOGO_FILE = stringPreferencesKey("logoFile")
+        private val REMINDER_HOUR = intPreferencesKey("reminderHour")
+        private val REMINDER_MINUTE = intPreferencesKey("reminderMinute")
+        private val DAILY_CAP = intPreferencesKey("dailyCapParts")
+        private val WINDOW_CAP = intPreferencesKey("windowCapParts")
+        private val SIM_ID = intPreferencesKey("simSubscriptionId")
+        private val RENEWAL_RULE = stringPreferencesKey("renewalRule")
+        private val RESTART_DAYS = intPreferencesKey("restartAfterDays")
+        private val QUIET_WEEKDAYS = stringSetPreferencesKey("quietWeekdays")
+        private val MORNING_SUMMARY = booleanPreferencesKey("morningSummary")
+        private val ALL_CLEAR = booleanPreferencesKey("allClearNotice")
+        private val TEST_MODE = booleanPreferencesKey("testMode")
+        private val PACK_LANGUAGE = stringPreferencesKey("packLanguage")
+        private val PIN_HASH = stringPreferencesKey("pinHash")
+        private val PIN_SALT = stringPreferencesKey("pinSalt")
+        private val PIN_LENGTH = intPreferencesKey("pinLength")
+        private val PIN_FAILURES = intPreferencesKey("pinFailures")
+        private val PIN_LOCKED_UNTIL = longPreferencesKey("pinLockedUntil")
+        private val BIOMETRIC = booleanPreferencesKey("biometric")
+        private val RECOVERY_HASH = stringPreferencesKey("recoveryCodeHash")
+        private val RECOVERY_SALT = stringPreferencesKey("recoverySalt")
+        private val BACKUP_FOLDER = stringPreferencesKey("backupFolderUri")
+        private val BACKUP_PASSWORD_SET = booleanPreferencesKey("backupPasswordSet")
+        private val BACKUP_HINT = stringPreferencesKey("backupPasswordHint")
+        private val BACKUP_KEY = stringPreferencesKey("backupKeyWrapped")
+        private val BACKUP_SALT = stringPreferencesKey("backupSalt")
+        private val LAST_BACKUP_DAY = longPreferencesKey("lastBackupDay")
+        private val LAST_RUN_DAY = longPreferencesKey("lastDailyRunDay")
+        private val LAST_RUN_AT = longPreferencesKey("lastDailyRunAt")
+        private val ONBOARDING_DONE = booleanPreferencesKey("onboardingDone")
+        private val SETUP_DONE_AT = longPreferencesKey("setupDoneAt")
+        private val LAST_COPY_SENT_DAY = longPreferencesKey("lastCopySentDay")
+        private val SETTINGS_RESET = booleanPreferencesKey("settingsReset")
     }
 }

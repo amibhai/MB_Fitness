@@ -48,6 +48,7 @@ import com.swastik.mbfitness.domain.HealthFacts
 import com.swastik.mbfitness.domain.HealthFix
 import com.swastik.mbfitness.domain.HealthRow
 import com.swastik.mbfitness.domain.HealthState
+import com.swastik.mbfitness.domain.LogText
 import com.swastik.mbfitness.domain.OemGuide
 import com.swastik.mbfitness.domain.PhoneNumbers
 import com.swastik.mbfitness.domain.ReminderSchedule
@@ -123,6 +124,10 @@ class HealthViewModel(private val app: App) : ViewModel() {
             hibernationExempt = checks.hibernationExempt(),
             hasSim = checks.hasSim(),
             chosenSimMissing = checks.chosenSimMissing(current.simSubscriptionId),
+            phoneAsksWhichSim = current.simSubscriptionId == null && checks.phoneAsksWhichSim(),
+            setupDoneAt = current.setupDoneAt,
+            lastCopySentDay = current.lastCopySentDay,
+            ownerNumberSet = current.trainerPhone.isNotBlank(),
             sentTodayParts = app.messages.sendsForPacing().filter { Dates.dayOf(it.atMillis) == today }.sumOf { it.parts },
             dailyCapParts = current.dailyCapParts,
             queued = app.messages.observeQueuedCount().first(),
@@ -177,7 +182,8 @@ fun HealthCheckScreen(onBack: () -> Unit, onSetPin: () -> Unit, onBackup: () -> 
                     DeviceIntents.open(context, DeviceIntents.notifications(context))
                 }
             HealthFix.HIBERNATION -> DeviceIntents.hibernation(context)?.let { manageHibernation.launchOr(it) { viewModel.refresh() } }
-            HealthFix.PICK_SIM -> onSettings()
+            HealthFix.PICK_SIM, HealthFix.GYM_DETAILS -> onSettings()
+            HealthFix.DATE_AND_TIME -> DeviceIntents.open(context, DeviceIntents.dateAndTime())
             HealthFix.OPEN_MESSAGES -> onMessages()
             HealthFix.BACKUP -> onBackup()
             HealthFix.TEST_MODE -> viewModel.turnOffTestMode()
@@ -274,7 +280,8 @@ fun ErrorLogScreen(onBack: () -> Unit) {
                         "Copy as text",
                         {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("MB Fitness error log", entries.joinToString("\n", transform = ::line)))
+                            val version = (context.applicationContext as App).versionLine()
+                            clipboard.setPrimaryClip(ClipData.newPlainText("MB Fitness error log", LogText.forCopying(listOf(version) + entries.map(::line))))
                             snackbar.show("Copied")
                         },
                         Modifier.fillMaxWidth(),
@@ -316,12 +323,26 @@ private val HELP = listOf(
     HelpTopic(
         "Back up your data",
         R.drawable.ic_backup,
-        listOf("Go to Settings, then Backup and restore.", "Choose a folder. Backups then run every Sunday.", "To move to a new phone, install the app and pick Restore."),
+        listOf(
+            "Go to Settings, then Backup and restore.",
+            "Choose a folder. Backups then run every Sunday.",
+            "Once a month, tap Send a copy and send it to yourself on WhatsApp or Google Drive, in case this phone is lost.",
+            "To move to a new phone, install the app and pick Restore.",
+        ),
     ),
     HelpTopic(
         "Reminders stopped?",
         R.drawable.ic_health_and_safety,
         listOf("Go to Settings, then Health check.", "Tap the fix beside anything that isn't green.", "Your phone may be stopping the app to save battery. The steps for your brand are at the bottom."),
+    ),
+    HelpTopic(
+        "Something went wrong?",
+        R.drawable.ic_error,
+        listOf(
+            "Try it again. A save that failed changed nothing, so your data is safe.",
+            "If it keeps happening, go to Settings, then Health check, then Error log.",
+            "Tap Copy as text and send it to Swastik on WhatsApp.",
+        ),
     ),
 )
 

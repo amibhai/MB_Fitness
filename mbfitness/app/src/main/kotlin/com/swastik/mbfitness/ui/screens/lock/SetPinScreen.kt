@@ -89,16 +89,19 @@ class SetPinViewModel(private val appLock: AppLock, private val settings: Settin
         }
         viewModelScope.launch {
             state.update { it.copy(busy = true) }
-            val needsCode = settings.current().recoveryCodeHash == null
-            val code = appLock.setPin(pin, newRecoveryCode = needsCode)
-            appLock.markUnlocked()
-            state.update {
-                it.copy(
-                    busy = false,
-                    entered = "",
-                    recoveryCode = code,
-                    stage = if (code != null) SetPinStage.SHOW_CODE else SetPinStage.DONE,
-                )
+            try {
+                val needsCode = settings.current().recoveryCodeHash == null
+                val code = appLock.setPin(pin, newRecoveryCode = needsCode)
+                appLock.markUnlocked()
+                state.update {
+                    it.copy(
+                        entered = "",
+                        recoveryCode = code,
+                        stage = if (code != null) SetPinStage.SHOW_CODE else SetPinStage.DONE,
+                    )
+                }
+            } finally {
+                state.update { it.copy(busy = false) }
             }
         }
     }

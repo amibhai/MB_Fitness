@@ -8,6 +8,9 @@ import com.swastik.mbfitness.data.BackupFolder
 import com.swastik.mbfitness.data.BackupManager
 import com.swastik.mbfitness.data.BackupOutcome
 import com.swastik.mbfitness.data.BackupRestoreResult
+import com.swastik.mbfitness.data.CopyOutcome
+import com.swastik.mbfitness.data.MAX_PICKED_FILE_BYTES
+import com.swastik.mbfitness.data.readUpTo
 import com.swastik.mbfitness.data.RestoreOpen
 import com.swastik.mbfitness.data.RestorePlan
 import com.swastik.mbfitness.data.SettingsStore
@@ -21,6 +24,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.IOException
 
 sealed interface RestoreStage {
@@ -38,11 +42,19 @@ data class BackupUiState(
     val passwordSet: Boolean = false,
     val hint: String? = null,
     val hasSafetyCopy: Boolean = false,
+    /** The day of the app's own newest copy, offered when it's newer than anything in the folder. */
+    val ownCopyDay: Long? = null,
+    val lastCopySentDay: Long? = null,
     val busy: Boolean = false,
     val restore: RestoreStage? = null,
 )
 
-private data class FolderFacts(val usable: Boolean = false, val latest: String? = null, val hasSafetyCopy: Boolean = false)
+private data class FolderFacts(
+    val usable: Boolean = false,
+    val latest: String? = null,
+    val hasSafetyCopy: Boolean = false,
+    val ownCopyDay: Long? = null,
+)
 
 class BackupViewModel(
     private val backups: BackupManager,
@@ -67,6 +79,8 @@ class BackupViewModel(
                 passwordSet = current.backupPasswordSet,
                 hint = current.backupPasswordHint,
                 hasSafetyCopy = folder.hasSafetyCopy,
+                ownCopyDay = folder.ownCopyDay,
+                lastCopySentDay = current.lastCopySentDay,
                 busy = working,
                 restore = stage,
             )
@@ -80,12 +94,13 @@ class BackupViewModel(
             val uri = settings.current().backupFolderUri
             facts.value = withContext(Dispatchers.IO) {
                 val safety = backups.hasSafetyCopy()
+                val own = runCatching { backups.ownCopyDay() }.getOrNull()
                 if (uri == null) {
-                    FolderFacts(hasSafetyCopy = safety)
+                    FolderFacts(hasSafetyCopy = safety, ownCopyDay = own)
                 } else {
                     val folder = folderFor(uri)
                     val usable = folder.isUsable()
-                    FolderFacts(usable, if (usable) BackupRules.newest(folder.names()) else null, safety)
+                    FolderFacts(usable, if (usable) runCatching { backups.latestName(folder) }.getOrNull() else null, safety, own)
                 }
             }
         }
@@ -113,6 +128,17 @@ class BackupViewModel(
         }
     }
 
+    /** Makes the file for "Send a copy". The screen hands it to Android's share sheet. */
+    fun sendCopy(onReady: (File) -> Unit, onProblem: (String) -> Unit) {
+        working {
+            when (val outcome = backups.copyToSend()) {
+                is CopyOutcome.Ready -> onReady(outcome.file)
+                CopyOutcome.PasswordNeeded -> onProblem("Set your backup password again. This phone can't reach the old one.")
+                is CopyOutcome.Failed -> onProblem("The copy couldn't be made. Check the phone has space.")
+            }
+        }
+    }
+
     fun setPassword(password: String, hint: String, onDone: (String) -> Unit) {
         working {
             val saved = backups.setPassword(password, hint)
@@ -124,18 +150,26 @@ class BackupViewModel(
         viewModelScope.launch { backups.removePassword() }
     }
 
+    /** The newest backup in the folder that opens. A damaged newest file gives way to the one before. */
     fun restoreLatest() {
         working {
             val uri = settings.current().backupFolderUri
-            val latest = uri?.let { facts.value.latest }
-            val bytes = if (uri != null && latest != null) readOrNull { folderFor(uri).read(latest) } else null
-            if (bytes == null) restore.value = RestoreStage.Refused("That backup can't be read.") else openFile(bytes, null)
+            val bytes = uri?.let { folder -> withContext(Dispatchers.IO) { runCatching { backups.newestReadable(folderFor(folder)) }.getOrNull() } }
+            if (bytes == null) restore.value = RestoreStage.Refused("No backup in that folder can be read.") else openFile(bytes, null)
+        }
+    }
+
+    /** The app's own daily copy, which can be newer than any backup in the folder. */
+    fun restoreOwnCopy() {
+        working {
+            val bytes = backups.ownCopy()
+            if (bytes == null) restore.value = RestoreStage.Refused("That copy can't be read.") else openFile(bytes, null)
         }
     }
 
     fun onRestoreFileChosen(uri: Uri) {
         working {
-            val bytes = readOrNull { resolver.openInputStream(uri)?.use { it.readBytes() } }
+            val bytes = readOrNull { resolver.openInputStream(uri)?.use { it.readUpTo(MAX_PICKED_FILE_BYTES) } }
             if (bytes == null) restore.value = RestoreStage.Refused("That file can't be read.") else openFile(bytes, null)
         }
     }

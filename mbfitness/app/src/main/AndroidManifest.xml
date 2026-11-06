@@ -42,6 +42,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Shown instead of the app when it keeps crashing, so the details can still get out. -->
+        <activity
+            android:name=".RecoveryActivity"
+            android:exported="false"
+            android:theme="@style/Theme.MbFitness" />
+
         <!-- Explicit and not exported: only the SMS stack's PendingIntents and the system reach these. -->
         <receiver
             android:name=".widget.MbWidgetReceiver"
@@ -54,6 +60,7 @@
                 android:resource="@xml/mb_widget_info" />
         </receiver>
         <receiver android:name=".sms.SentReceiver" android:exported="false" />
+        <receiver android:name=".data.CopySentReceiver" android:exported="false" />
         <receiver android:name=".sms.DeliveredReceiver" android:exported="false" />
         <receiver android:name=".work.DailyAlarmReceiver" android:exported="false" />
         <receiver
@@ -69,5 +76,16 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <!-- "Send a copy" hands one backup file to the app bhaiya picks (WhatsApp, Drive). Nothing else is reachable. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/shared_files" />
+        </provider>
     </application>
 </manifest>

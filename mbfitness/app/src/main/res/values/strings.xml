@@ -2,4 +2,11 @@
 <resources>
     <string name="app_name">MB Fitness Club</string>
     <string name="widget_description">How many members are due and overdue</string>
+    <string name="recovery_title">MB Fitness keeps stopping</string>
+    <string name="recovery_message">The app stopped several times in a row. Your members and payments are still on this phone. Try again. If it keeps happening, copy the details and send them to Swastik on WhatsApp.</string>
+    <string name="recovery_try_again">Try again</string>
+    <string name="recovery_copy">Copy the details for Swastik</string>
+    <string name="recovery_copied">Copied. Paste it to Swastik on WhatsApp.</string>
+    <string name="recovery_send">Send a copy of your data</string>
+    <string name="recovery_send_failed">The copy couldn\'t be made.</string>
 </resources>

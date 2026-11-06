@@ -64,6 +64,15 @@ class MessagingRulesTest {
         assertEquals(RunHealth.VERY_LATE, ReminderSchedule.health(now, now - 50 * hour - 1))
     }
 
+    /** Reminders that never ran once must still show up as late (SPEC 9: never silently stop). */
+    @Test
+    fun beforeTheFirstRunTheClockStartsWhenSetupFinished() {
+        val now = at(12)
+        assertEquals(RunHealth.OK, ReminderSchedule.health(now, null, since = now - 26 * hour))
+        assertEquals(RunHealth.VERY_LATE, ReminderSchedule.health(now, null, since = now - 50 * hour - 1))
+        assertEquals("a real run wins", RunHealth.OK, ReminderSchedule.health(now, now - hour, since = now - 60 * hour))
+    }
+
     @Test
     fun lastRanSaysWhenInWords() {
         assertEquals("Reminders haven't run yet", ReminderSchedule.lastRanText(at(12), null))
@@ -77,6 +86,13 @@ class MessagingRulesTest {
         assertFalse(ReminderSchedule.hasStopped(at(12), null))
         assertFalse(ReminderSchedule.hasStopped(at(12), day - 1))
         assertTrue(ReminderSchedule.hasStopped(at(12), day - 2))
+    }
+
+    @Test
+    fun remindersThatNeverRanCountFromSetup() {
+        assertFalse(ReminderSchedule.hasStopped(at(12), null, setupDoneAt = at(9, onDay = day - 1)))
+        assertTrue(ReminderSchedule.hasStopped(at(12), null, setupDoneAt = at(9, onDay = day - 2)))
+        assertFalse("a real run wins", ReminderSchedule.hasStopped(at(12), day, setupDoneAt = at(9, onDay = day - 9)))
     }
 
     private val facts = SummaryFacts(due = 3, overdue = 4, balancePending = 2400, onTheirWay = 12, failed = 0)
@@ -327,5 +343,19 @@ class MessagingRulesTest {
         val holiday = QuietCalendar(setOf(java.time.DayOfWeek.SUNDAY), listOf(QuietDate(friday + 1, "Diwali")))
         assertEquals(friday + 1, holiday.nextQuietDay(friday))
         assertNull(QuietCalendar(emptySet()).nextQuietDay(friday))
+    }
+
+    /** A mistaken 9:00 PM would mean reminders never go (docs/DECISIONS.md). */
+    @Test
+    fun theReminderTimeStaysWhereRemindersCanGo() {
+        assertTrue(ReminderSchedule.isAllowedTime(9, 0))
+        assertTrue(ReminderSchedule.isAllowedTime(8, 0))
+        assertTrue(ReminderSchedule.isAllowedTime(19, 59))
+        assertTrue(ReminderSchedule.isAllowedTime(20, 0))
+        assertFalse(ReminderSchedule.isAllowedTime(20, 1))
+        assertFalse(ReminderSchedule.isAllowedTime(21, 0))
+        assertFalse(ReminderSchedule.isAllowedTime(7, 59))
+        assertFalse(ReminderSchedule.isAllowedTime(25, 0))
+        assertFalse(ReminderSchedule.isAllowedTime(9, 60))
     }
 }

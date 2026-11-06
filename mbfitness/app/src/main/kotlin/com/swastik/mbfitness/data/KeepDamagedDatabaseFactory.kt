@@ -39,12 +39,16 @@ class KeepDamagedDatabaseFactory(private val onDamaged: () -> Unit) : SupportSQL
         )
     }
 
+    /** The write-ahead log can hold the newest changes, so it's kept with the main file. */
     private fun keepCopy(path: String?) {
-        val file = path?.let(::File) ?: return
-        try {
-            if (file.exists()) file.copyTo(File("$path.damaged"), overwrite = true)
-        } catch (_: IOException) {
-            // The restore offer matters more than this copy.
+        if (path == null) return
+        for (suffix in listOf("", "-wal", "-shm")) {
+            val file = File(path + suffix)
+            try {
+                if (file.exists()) file.copyTo(File("$path.damaged$suffix"), overwrite = true)
+            } catch (_: IOException) {
+                // The restore offer matters more than this copy.
+            }
         }
     }
 }

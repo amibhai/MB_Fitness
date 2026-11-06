@@ -23,3 +23,6 @@ keystore.properties
 mbfitness_backup_*.json
 members*.csv
 *_import.csv
+
+# Finished builds to hand over, and their mapping files. Too big for git: back them up with the key.
+dist/

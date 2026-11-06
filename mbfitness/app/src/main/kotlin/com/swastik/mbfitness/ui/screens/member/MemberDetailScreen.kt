@@ -67,6 +67,7 @@ import com.swastik.mbfitness.ui.screens.home.statusColors
 import com.swastik.mbfitness.ui.screens.home.statusLabel
 import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
+import com.swastik.mbfitness.work.DeviceIntents
 
 private enum class DetailDialog { SEND_SMS, FREEZE, LEFT, DELETE, STOP_SMS, REMOVE_AADHAAR, PIN_FOR_REVEAL, NEED_PIN }
 
@@ -324,7 +325,7 @@ private fun ActionButtons(
             "Call",
             {
                 // Opens the dialer with the number filled in, so it needs no permission.
-                context.startActivity(Intent(Intent.ACTION_DIAL, "tel:${member.phone}".toUri()))
+                if (!DeviceIntents.open(context, Intent(Intent.ACTION_DIAL, "tel:${member.phone}".toUri()))) snackbar.show("This phone can't make calls")
             },
             Modifier.weight(1f),
             icon = R.drawable.ic_call,

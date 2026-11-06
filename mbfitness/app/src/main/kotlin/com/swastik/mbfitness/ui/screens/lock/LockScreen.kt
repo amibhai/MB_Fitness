@@ -169,4 +169,11 @@ private fun RecoveryEntry(state: LockUiState, viewModel: LockViewModel) {
     )
     PrimaryButton("Check code", { viewModel.onRecoveryCode(code) }, Modifier.fillMaxWidth(), enabled = !state.busy && code.isNotBlank())
     LinkButton("Back to PIN", viewModel::onBackToPin, color = colors.greeting)
+    // Nobody else can unlock it, so the last way back is said here rather than left to a phone call.
+    Text(
+        "Lost the code too? Then only a backup can bring your data back: in Android's App info for this app, clear its storage, open the app and restore your latest backup.",
+        style = MbType.Caption,
+        color = colors.onHeaderMuted,
+        textAlign = TextAlign.Center,
+    )
 }

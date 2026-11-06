@@ -41,6 +41,18 @@ object ReminderSchedule {
     private const val LATE_AFTER_MILLIS = 26 * HOUR_MILLIS
     private const val VERY_LATE_AFTER_MILLIS = 50 * HOUR_MILLIS
     const val PROBLEM_AFTER_DAYS = 2L
+    private const val EARLIEST_HOUR = Pacing.PLANNED_FROM_HOUR
+    private const val LATEST_HOUR = 20
+
+    /**
+     * Reminders only go between 8 AM and 9 PM, so a run after that could never send anything:
+     * each day's reminders would wait for a morning when they were already out of date. A
+     * mistaken 9:00 PM instead of 9:00 AM is easy to pick, so the picker refuses it.
+     */
+    fun isAllowedTime(hour: Int, minute: Int): Boolean =
+        minute in 0..59 && (hour in EARLIEST_HOUR until LATEST_HOUR || (hour == LATEST_HOUR && minute == 0))
+
+    const val ALLOWED_TIME_TEXT = "Choose a time from 8:00 AM to 8:00 PM. Reminders only go out between 8 AM and 9 PM."
 
     /** The next reminder time after [nowMillis]. */
     fun nextRunAt(nowMillis: Long, hour: Int, minute: Int): Long {
@@ -55,9 +67,12 @@ object ReminderSchedule {
         return lastRunDay != today && nowMillis >= Dates.millisAt(today, hour, minute)
     }
 
-    /** Home shows amber after 26 hours and red after 50 (SPEC 9). */
-    fun health(nowMillis: Long, lastRunAt: Long?): RunHealth {
-        val age = nowMillis - (lastRunAt ?: return RunHealth.OK)
+    /**
+     * Home shows amber after 26 hours and red after 50 (SPEC 9). Before the first run, the clock
+     * starts when setup finished ([since]), so reminders that never ran once still show up.
+     */
+    fun health(nowMillis: Long, lastRunAt: Long?, since: Long? = null): RunHealth {
+        val age = nowMillis - (lastRunAt ?: since ?: return RunHealth.OK)
         return when {
             age > VERY_LATE_AFTER_MILLIS -> RunHealth.VERY_LATE
             age > LATE_AFTER_MILLIS -> RunHealth.LATE
@@ -78,9 +93,14 @@ object ReminderSchedule {
         return "Reminders last ran: $whenText"
     }
 
-    /** The first of the "reminders didn't run for 2 days" problem notice (SPEC 8.10). */
-    fun hasStopped(nowMillis: Long, lastRunDay: Long?): Boolean =
-        lastRunDay != null && Dates.dayOf(nowMillis) - lastRunDay >= PROBLEM_AFTER_DAYS
+    /**
+     * The "reminders didn't run for 2 days" problem notice (SPEC 8.10). Before the first run, it
+     * counts from when setup finished ([setupDoneAt]).
+     */
+    fun hasStopped(nowMillis: Long, lastRunDay: Long?, setupDoneAt: Long? = null): Boolean {
+        val since = lastRunDay ?: setupDoneAt?.let(Dates::dayOf) ?: return false
+        return Dates.dayOf(nowMillis) - since >= PROBLEM_AFTER_DAYS
+    }
 }
 
 data class SummaryFacts(

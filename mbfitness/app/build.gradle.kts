@@ -15,6 +15,8 @@ plugins {
     alias(libs.plugins.room)
 }
 
+val smokeBuild = project.hasProperty("smoke")
+
 android {
     namespace = "com.swastik.mbfitness"
     compileSdk = 37
@@ -23,8 +25,9 @@ android {
         applicationId = "com.swastik.mbfitness"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        // Raise both for every build given to bhaiya (docs/HANDOVER.md).
+        versionCode = 2
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -48,15 +51,33 @@ android {
     buildTypes {
         debug {
             enableUnitTestCoverage = true
+            // Its own package, so a test build sits beside the real app on one phone and can
+            // never touch its data. Its name says "test" in the launcher (src/debug/res).
+            applicationIdSuffix = ".debug"
         }
         release {
-            signingConfigs.findByName("release")?.let { signingConfig = it }
+            if (smokeBuild) {
+                applicationIdSuffix = ".smoke"
+                signingConfig = signingConfigs.getByName("debug")
+            } else {
+                signingConfigs.findByName("release")?.let { signingConfig = it }
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+    }
+
+    // `-Psmoke` builds the release, R8 and all, under its own package and with the test hooks, so
+    // what R8 changed can be checked on a phone beside the real app without touching its data.
+    if (smokeBuild) {
+        sourceSets.getByName("release") {
+            kotlin.directories.remove("src/release/kotlin")
+            kotlin.directories.add("src/debug/kotlin")
+            res.directories.add("src/debug/res")
         }
     }
 
@@ -170,8 +191,10 @@ val permissionAllowList = setOf(
     "android.permission.ACCESS_NETWORK_STATE",
     "android.permission.FOREGROUND_SERVICE",
     "android.permission.USE_FINGERPRINT",
-    "com.swastik.mbfitness.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
 )
+
+/** AndroidX's own guard for its receivers, named after the package, so each build has its own. */
+fun receiverGuardFor(applicationId: String) = "$applicationId.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
 
 val permissionDenyList = setOf(
     "android.permission.INTERNET",
@@ -225,7 +248,7 @@ androidComponents {
 
         val manifestCheck = tasks.register<VerifyMergedManifestTask>("verify${suffix}MergedManifest") {
             mergedManifest.set(variant.artifacts.get(SingleArtifact.MERGED_MANIFEST))
-            allowedPermissions.set(permissionAllowList)
+            allowedPermissions.set(variant.applicationId.map { permissionAllowList + receiverGuardFor(it) })
             bannedPermissions.set(permissionDenyList)
             report.set(layout.buildDirectory.file("reports/verify/${variant.name}-permissions.txt"))
         }

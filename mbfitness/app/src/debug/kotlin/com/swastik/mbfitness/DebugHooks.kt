@@ -8,11 +8,17 @@ import android.content.Context
 import android.content.res.Configuration
 import android.database.sqlite.SQLiteFullException
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import androidx.core.content.FileProvider
 import com.swastik.mbfitness.data.BackupFolder
+import com.swastik.mbfitness.data.CopyOutcome
 import com.swastik.mbfitness.data.MemberDraft
 import com.swastik.mbfitness.data.MemberSaveResult
 import com.swastik.mbfitness.data.RenewalRequest
+import com.swastik.mbfitness.data.RestoreOpen
+import com.swastik.mbfitness.data.SendCopy
 import com.swastik.mbfitness.domain.Aadhaar
 import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.ImportRow
@@ -21,6 +27,7 @@ import com.swastik.mbfitness.domain.PaymentMode
 import com.swastik.mbfitness.domain.PhoneNumbers
 import com.swastik.mbfitness.widget.MbWidgetReceiver
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
@@ -28,19 +35,24 @@ import kotlinx.coroutines.launch
  * Test hooks. This file only exists in debug builds; a release build gets an empty one from
  * src/release, so none of this can ship. Use them from adb:
  *
- *   am start -n com.swastik.mbfitness/.MainActivity --es mbf_theme light|dark|system
- *   am start -n com.swastik.mbfitness/.MainActivity --ef mbf_font 1.3
- *   am start -n com.swastik.mbfitness/.MainActivity --ei mbf_seed 300
- *   am start -n com.swastik.mbfitness/.MainActivity --ei mbf_seed 40 --ez mbf_consent true
- *   am start -n com.swastik.mbfitness/.MainActivity --ei mbf_fail 2
- *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_onboarded true
- *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_test_folder true
- *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_history true
- *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_storage_full true
- *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_pin_widget true
- *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_fake_aadhaar true
- *   am start -n com.swastik.mbfitness/.MainActivity --es mbf_upi gymowner@okbank
- *   am start -n com.swastik.mbfitness/.MainActivity --es mbf_trainer 98xxxxxxxx
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --es mbf_theme light|dark|system
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ef mbf_font 1.3
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ei mbf_seed 300
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ei mbf_seed 40 --ez mbf_consent true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ei mbf_fail 2
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_onboarded true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_test_folder true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_history true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_storage_full true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_bug true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_crash true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_check_copy true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_daily true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_checkpoint true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_pin_widget true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --ez mbf_fake_aadhaar true
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --es mbf_upi gymowner@okbank
+ *   am start -n com.swastik.mbfitness.debug/com.swastik.mbfitness.MainActivity --es mbf_trainer 98xxxxxxxx
  */
 object DebugHooks {
     private const val SEED_PHONE_BASE = 9_000_000_000L
@@ -142,6 +154,43 @@ object DebugHooks {
                 Log.i("MbfDebug", "storage-full check: failing a save now")
                 throw SQLiteFullException("database or disk is full (debug check)")
             }
+        }
+        // As if a screen's work hit a bug: the app should say so, log it and carry on.
+        if (activity.intent.getBooleanExtra("mbf_bug", false)) {
+            MainScope().launch {
+                Log.i("MbfDebug", "bug check: failing a screen's work now")
+                throw IllegalStateException("A made-up bug (debug check)")
+            }
+        }
+        // Reads a "Send a copy" file through the app's own provider, as a receiving app would.
+        if (activity.intent.getBooleanExtra("mbf_check_copy", false)) {
+            val app = activity.application as App
+            MainScope().launch {
+                val file = (app.backups.copyToSend() as CopyOutcome.Ready).file
+                val uri = FileProvider.getUriForFile(app, SendCopy.authority(app), file)
+                val bytes = app.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                Log.i("MbfDebug", "copy check: ${bytes.size} bytes through $uri, opens: ${app.backups.open(bytes) is RestoreOpen.Ready}")
+            }
+        }
+        // Moves everything from the write-ahead log into the main file, so a check can damage it.
+        if (activity.intent.getBooleanExtra("mbf_checkpoint", false)) {
+            val app = activity.application as App
+            MainScope().launch(Dispatchers.IO) {
+                app.database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
+                Log.i("MbfDebug", "checkpoint check: done")
+            }
+        }
+        // Runs the whole daily job now, the weekly backups included.
+        if (activity.intent.getBooleanExtra("mbf_daily", false)) {
+            val app = activity.application as App
+            MainScope().launch {
+                app.dailyRunner.run()
+                Log.i("MbfDebug", "daily check: ran, own copy from ${app.backups.ownCopyDay()}")
+            }
+        }
+        // As if the main thread hit a bug: the app closes, and its details wait for the next start.
+        if (activity.intent.getBooleanExtra("mbf_crash", false)) {
+            Handler(Looper.getMainLooper()).post { throw IllegalStateException("A made-up crash (debug check)") }
         }
         val fail = activity.intent.getIntExtra("mbf_fail", 0)
         if (fail > 0) failQueued(activity.application as App, fail)

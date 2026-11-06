@@ -235,8 +235,8 @@ class DailyRunnerTest {
         assertTrue(logged.single().message, "summary failed" in logged.single().message)
     }
 
-    private fun runnerWith(backup: suspend () -> Boolean = { true }, simMissing: suspend () -> Boolean = { false }) =
-        DailyRunner(env.repository, messages, env.settings, env.clock, kicker, notices, ErrorLogger(env.db, env.clock), backup, simMissing)
+    private fun runnerWith(backup: suspend () -> Boolean = { true }, simProblem: suspend () -> ProblemKind? = { null }) =
+        DailyRunner(env.repository, messages, env.settings, env.clock, kicker, notices, ErrorLogger(env.db, env.clock), backup, simProblem)
 
     @Test
     fun aRunTakesTheWeeklyBackupToo() = runTest {
@@ -269,8 +269,31 @@ class DailyRunnerTest {
     @Test
     fun aMissingSimRaisesAProblem() = runTest {
         configure()
-        runnerWith(simMissing = { true }).run()
+        runnerWith(simProblem = { ProblemKind.SIM_MISSING }).run()
         assertEquals(listOf(ProblemKind.SIM_MISSING), notices.problems)
+    }
+
+    /** Nobody is there to pick a SIM when a reminder goes, so the run says so (docs/DECISIONS.md). */
+    @Test
+    fun aPhoneThatAsksWhichSimRaisesAProblem() = runTest {
+        configure()
+        member()
+        runnerWith(simProblem = { ProblemKind.SIM_NOT_CHOSEN }).run()
+        assertEquals(listOf(ProblemKind.SIM_NOT_CHOSEN), notices.problems)
+        assertEquals("the run still goes", 1, queued().size)
+    }
+
+    /** With the clock this wrong, every date would be too. It runs once the clock is right. */
+    @Test
+    fun nothingRunsWhileThePhonesDateIsPlainlyWrong() = runTest {
+        configure()
+        member()
+        val realDay = env.clock.day
+        env.clock.day = com.swastik.mbfitness.domain.Dates.of(2020, 1, 1)
+        assertFalse(runner.runIfDue())
+        assertEquals(null, env.settings.current().lastDailyRunDay)
+        env.clock.day = realDay
+        assertTrue(runner.runIfDue())
     }
 
     /** Otherwise the watchdog wouldn't try again and the "stopped" notice could never fire. */

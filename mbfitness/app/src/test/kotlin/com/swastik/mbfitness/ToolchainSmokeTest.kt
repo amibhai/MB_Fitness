@@ -18,8 +18,9 @@ class ToolchainSmokeTest {
         assertTrue(context is App)
     }
 
+    /** Tests run the debug build, whose name says "test" so it can't be mistaken for the real app. */
     @Test
     fun resourcesAreAvailable() {
-        assertEquals("MB Fitness Club", context.getString(R.string.app_name))
+        assertEquals("MB Fitness (test)", context.getString(R.string.app_name))
     }
 }

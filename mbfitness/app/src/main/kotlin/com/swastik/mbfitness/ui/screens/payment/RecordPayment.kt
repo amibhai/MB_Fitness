@@ -153,13 +153,18 @@ class RecordPaymentViewModel(
         if (!current.canSave) return
         state.update { it.copy(saving = true) }
         viewModelScope.launch {
-            val saved = when (current.tab) {
-                PaymentTab.RENEWAL -> members.recordRenewal(
-                    RenewalRequest(memberId, requireNotNull(current.planId), amount, current.mode, clock.today()),
-                )
-                PaymentTab.BALANCE -> members.recordBalance(BalanceRequest(memberId, amount, current.mode, clock.today()))
+            // If this fails, the message says to try again, so Save has to come back.
+            try {
+                val saved = when (current.tab) {
+                    PaymentTab.RENEWAL -> members.recordRenewal(
+                        RenewalRequest(memberId, requireNotNull(current.planId), amount, current.mode, clock.today()),
+                    )
+                    PaymentTab.BALANCE -> members.recordBalance(BalanceRequest(memberId, amount, current.mode, clock.today()))
+                }
+                state.update { it.copy(saved = saved) }
+            } finally {
+                state.update { it.copy(saving = false) }
             }
-            state.update { it.copy(saving = false, saved = saved) }
         }
     }
 

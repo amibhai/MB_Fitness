@@ -19,7 +19,8 @@ class SentReceiver : BroadcastReceiver() {
         val pending = goAsync()
         app.backgroundScope.launch {
             try {
-                val retryAt = app.messages.onPartResult(id, attempt, partCount, ok, if (ok) null else SimSmsSender.describeResult(code))
+                val reason = if (ok) null else reasonFor(app, code)
+                val retryAt = app.messages.onPartResult(id, attempt, partCount, ok, reason)
                 // The outbox works out the next wake-up, because it can see the whole queue.
                 if (retryAt != null) app.outboxKicker.kick()
             } finally {
@@ -27,6 +28,13 @@ class SentReceiver : BroadcastReceiver() {
             }
         }
     }
+}
+
+/** The reason for a failed part, naming the real cause when the phone asks which SIM to use. */
+private suspend fun reasonFor(app: App, code: Int): String {
+    val asksWhichSim = app.settings.current().simSubscriptionId == null &&
+        runCatching { app.deviceChecks.phoneAsksWhichSim() }.getOrDefault(false)
+    return SimSmsSender.describeResult(code, asksWhichSim)
 }
 
 /** A delivery report. Not every carrier sends these, and that's fine (SPEC 8.5). */

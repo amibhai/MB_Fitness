@@ -5,17 +5,15 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.net.toUri
+import com.swastik.mbfitness.work.DeviceIntents
 
 /**
  * Asks for SMS, and for notifications too, so problems can be reported. Once Android stops
@@ -45,9 +43,7 @@ fun rememberSmsPermissionRequest(onDone: () -> Unit = {}): () -> Unit {
 private fun openSettingsIfPromptIsGone(context: Context) {
     val activity = context.findActivity() ?: return
     if (activity.shouldShowRequestPermissionRationale(Manifest.permission.SEND_SMS)) return
-    activity.startActivity(
-        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${activity.packageName}".toUri()),
-    )
+    DeviceIntents.open(activity, DeviceIntents.appInfo(activity))
 }
 
 private const val NO_PROMPT_MILLIS = 1_000L

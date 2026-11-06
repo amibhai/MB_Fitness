@@ -24,8 +24,11 @@ import com.swastik.mbfitness.domain.TemplateEngine
 import com.swastik.mbfitness.domain.TemplateValues
 import com.swastik.mbfitness.domain.TodayProvider
 import java.time.LocalDate
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -41,6 +44,15 @@ data class PaymentVersion(
     val note: String,
     val replacedAt: Long,
 )
+
+/** A payment's earlier versions. If they can't be read, the payment can still be shown and corrected. */
+fun paymentHistory(json: String): List<PaymentVersion> = try {
+    Json.decodeFromString<List<PaymentVersion>>(json)
+} catch (_: SerializationException) {
+    emptyList()
+} catch (_: IllegalArgumentException) {
+    emptyList()
+}
 
 /** A new member, as entered. [aadhaar] is only accepted with [aadhaarConsent] ticked. */
 data class MemberDraft(
@@ -206,7 +218,7 @@ class MemberRepository(
         if (draft.aadhaar != null && !draft.aadhaarConsent) return MemberSaveResult.AadhaarConsentMissing
 
         // Keystore work is slow, so it happens before the transaction opens.
-        val cipherText = draft.aadhaar?.let { vault.encrypt(it.revealDigits()) }
+        val cipherText = draft.aadhaar?.let { seal(it) }
         val appSettings = settings.current()
         val now = clock.nowMillis()
         val today = clock.today()
@@ -328,8 +340,9 @@ class MemberRepository(
         val now = clock.nowMillis()
         return db.withTransaction {
             val member = requireMember(id)
-            val open = freezes.openFor(id) ?: return@withTransaction null
-            freezes.close(open.id, today)
+            val open = freezes.openFor(id)
+            if (open == null && member.status != MemberState.FROZEN) return@withTransaction null
+            open?.let { freezes.close(it.id, today) }
             members.update(member.copy(status = MemberState.ACTIVE, updatedAt = now))
             events.insert(MemberEventEntity(memberId = id, type = MemberEventType.UNFROZEN, date = today))
             ExpiryChange(member.expiryDate, recalculate(id).expiry)
@@ -392,7 +405,7 @@ class MemberRepository(
 
     /** Returns false if the Keystore refused, in which case nothing changed. */
     suspend fun setAadhaar(id: Long, aadhaar: Aadhaar): Boolean {
-        val cipherText = vault.encrypt(aadhaar.revealDigits()) ?: return false
+        val cipherText = seal(aadhaar) ?: return false
         val today = clock.today()
         val now = clock.nowMillis()
         db.withTransaction {
@@ -414,7 +427,7 @@ class MemberRepository(
     /** Null when the number can't be read on this phone (SPEC 7.10). */
     suspend fun revealAadhaar(id: Long): Aadhaar? {
         val cipherText = members.get(id)?.aadhaarEnc ?: return null
-        val digits = vault.decrypt(cipherText) ?: return null
+        val digits = unseal(cipherText) ?: return null
         return (Aadhaar.parse(digits) as? Aadhaar.ParseResult.Valid)?.aadhaar
     }
 
@@ -422,9 +435,14 @@ class MemberRepository(
     suspend fun findAadhaarOwner(aadhaar: Aadhaar, exceptMemberId: Long = 0): MemberBrief? =
         members.aadhaarCandidates(aadhaar.last4, exceptMemberId)
             .firstOrNull { candidate ->
-                candidate.aadhaarEnc?.let(vault::decrypt) == aadhaar.revealDigits()
+                candidate.aadhaarEnc?.let { unseal(it) } == aadhaar.revealDigits()
             }
             ?.let { MemberBrief(it.id, it.name, it.phone) }
+
+    /** Keystore work is slow and a big import does hundreds of them, so it stays off the main thread. */
+    private suspend fun seal(aadhaar: Aadhaar): String? = withContext(Dispatchers.IO) { vault.encrypt(aadhaar.revealDigits()) }
+
+    private suspend fun unseal(cipherText: String): String? = withContext(Dispatchers.IO) { vault.decrypt(cipherText) }
 
     private fun MemberEntity.withoutAadhaar() =
         copy(aadhaarEnc = null, aadhaarLast4 = null, aadhaarConsentDate = null)
@@ -511,7 +529,7 @@ class MemberRepository(
         return db.withTransaction {
             val old = requirePayment(paymentId)
             val member = requireMember(old.memberId)
-            val history = Json.decodeFromString<List<PaymentVersion>>(old.editHistory) + PaymentVersion(
+            val history = paymentHistory(old.editHistory) + PaymentVersion(
                 old.charged, old.paid, old.paidOn, old.mode, old.planId, old.planMonths, old.note, now,
             )
             val newPlan = edit.planId?.takeIf { it != old.planId }?.let { requirePlan(it) }
@@ -609,7 +627,7 @@ class MemberRepository(
 
     /** All or nothing: one transaction, so a failure can't leave half a file imported. */
     suspend fun importMembers(rows: List<ImportRow>, smsConsent: Boolean): ImportResult {
-        val encrypted = rows.associate { row -> row.line to row.aadhaar?.let { vault.encrypt(it.revealDigits()) } }
+        val encrypted = rows.associate { row -> row.line to row.aadhaar?.let { seal(it) } }
         val owners = rows.mapNotNull { row ->
             row.aadhaar?.let { aadhaar -> findAadhaarOwner(aadhaar)?.let { row.name } }
         }
@@ -795,10 +813,14 @@ class MemberRepository(
         return true
     }
 
-    /** Taken inside the payment's transaction, so a crash can't reuse or skip a number. */
+    /**
+     * Taken inside the payment's transaction, so a crash can't reuse or skip a number. It never
+     * hands out a number already used, even if the counter were lost or set back: one clash would
+     * otherwise stop every payment from saving, with nobody around to fix it.
+     */
     private suspend fun nextReceiptNumber(): Long {
         val counters = db.counters()
-        val next = requireNotNull(counters.value(AppDatabase.RECEIPT_COUNTER)) { "Receipt counter missing" }
+        val next = maxOf(counters.value(AppDatabase.RECEIPT_COUNTER) ?: 1, (counters.highestReceipt() ?: 0) + 1)
         counters.set(CounterEntity(AppDatabase.RECEIPT_COUNTER, next + 1))
         return next
     }

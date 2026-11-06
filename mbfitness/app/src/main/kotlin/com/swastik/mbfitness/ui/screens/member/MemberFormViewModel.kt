@@ -174,8 +174,13 @@ class MemberFormViewModel(
         if (state.value.saving) return
         state.update { it.copy(saving = true, duplicateOwner = null) }
         viewModelScope.launch {
-            val done = trySave(ignoreDuplicateAadhaar)
-            state.update { it.copy(saving = false, result = done ?: it.result) }
+            // If this fails, the message says to try again, so Save has to come back.
+            try {
+                val done = trySave(ignoreDuplicateAadhaar)
+                state.update { it.copy(result = done ?: it.result) }
+            } finally {
+                state.update { it.copy(saving = false) }
+            }
         }
     }
 

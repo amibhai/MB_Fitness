@@ -12,6 +12,7 @@ object Pacing {
     /** Planned reminders stay inside these hours, even if a late catch-up run plans them. */
     const val PLANNED_FROM_HOUR = 8
     const val PLANNED_UNTIL_HOUR = 21
+    private const val STALE_RECHECK_MILLIS = 60L * 60 * 1000
 
     data class Limits(
         val windowCapParts: Int = 25,
@@ -78,7 +79,8 @@ object Pacing {
 
     /**
      * Picks what to do next. Limits apply to everything, so a message held by one holds the
-     * rest and priority stays strict. A planned message held overnight only holds itself.
+     * rest and priority stays strict. A planned message held overnight only holds itself, and so
+     * does one worded for an earlier day: that one waits for today's run, which replaces it.
      */
     fun next(queue: List<Queued>, nowMillis: Long, sent: List<Sent>, limits: Limits): NextStep {
         if (queue.isEmpty()) return NextStep.Idle
@@ -86,6 +88,10 @@ object Pacing {
         val wakes = later.map { it.notBefore }.toMutableList()
         val ordered = due.sortedWith(compareBy({ it.priority }, { it.createdAt }, { it.id }))
         for (message in ordered) {
+            if (isStale(message, nowMillis)) {
+                wakes += maxOf(Dates.millisAt(Dates.dayOf(nowMillis), limits.morningHour, limits.morningMinute), nowMillis + STALE_RECHECK_MILLIS)
+                continue
+            }
             when (val decision = decide(nowMillis, message.parts, message.isPlanned, sent, limits)) {
                 Decision.SendNow -> return NextStep.Send(message)
                 is Decision.WaitUntil -> {
@@ -96,6 +102,15 @@ object Pacing {
         }
         return NextStep.WakeAt(wakes.min())
     }
+
+    /**
+     * A planned message says things like "due today", so it only goes on the day it was planned.
+     * A late run after 9 PM holds its messages until morning, and without this they'd go at 8 AM
+     * with yesterday's words, before the morning run could replace them. [Queued.notBefore] is
+     * when it was planned, or a retry's short wait after that.
+     */
+    fun isStale(message: Queued, nowMillis: Long): Boolean =
+        message.isPlanned && Dates.dayOf(message.notBefore) < Dates.dayOf(nowMillis)
 
     /** When a broadcast's messages would go, by simulating the queue (SPEC 8.4). */
     fun planBroadcast(

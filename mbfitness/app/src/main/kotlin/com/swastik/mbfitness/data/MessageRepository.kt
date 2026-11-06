@@ -337,6 +337,16 @@ class MessageRepository(
                         messages.update(message.copy(status = MessageStatus.FAILED, lastError = NO_RESULT))
                     }
                 }
+            // Nothing waits more than a few minutes on purpose, so a far-off time means the clock
+            // jumped ahead and came back. A reminder is written again truthfully, the rest just go.
+            val now = clock.nowMillis()
+            messages.withStatusOnly(MessageStatus.QUEUED).filter { it.notBefore > now + FAR_OFF_MILLIS }.forEach { message ->
+                if (message.kind.isPlanned) {
+                    messages.cancel(message.id, "Replaced by today's plan")
+                } else {
+                    messages.update(message.copy(notBefore = now))
+                }
+            }
         }
     }
 
@@ -419,6 +429,7 @@ class MessageRepository(
 
     companion object {
         private const val HISTORY_DAYS = 400L
+        private const val FAR_OFF_MILLIS = 24L * 60 * 60 * 1000
         const val NO_RESULT = "The phone never confirmed this one. It may have gone. Retry only if needed."
         private val plannedKinds = MessageKind.entries.filter { it.isPlanned }
     }

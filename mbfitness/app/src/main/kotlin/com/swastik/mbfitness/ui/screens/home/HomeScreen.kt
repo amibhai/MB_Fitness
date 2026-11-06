@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -49,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.swastik.mbfitness.R
+import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.MemberState
 import com.swastik.mbfitness.domain.MemberTab
 import com.swastik.mbfitness.domain.RunHealth
@@ -73,6 +75,7 @@ import com.swastik.mbfitness.ui.theme.ChipColors
 import com.swastik.mbfitness.ui.theme.MbColors
 import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
+import com.swastik.mbfitness.work.DeviceIntents
 
 fun tabLabel(tab: MemberTab): String = when (tab) {
     MemberTab.OVERDUE -> "Overdue"
@@ -102,7 +105,13 @@ private fun emptyLine(tab: MemberTab): String = when (tab) {
 
 /** SPEC 10.2 screen 3. */
 @Composable
-fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit, onSmsSelected: (Set<Long>) -> Unit, onBackup: () -> Unit) {
+fun HomeScreen(
+    onMemberClick: (Long) -> Unit,
+    onAddMember: () -> Unit,
+    onSmsSelected: (Set<Long>) -> Unit,
+    onBackup: () -> Unit,
+    onSettings: () -> Unit = {},
+) {
     val viewModel = appViewModel { app ->
         HomeViewModel(app.members, app.settings, app.clock, app::canSendSms, app::repairReminders)
     }
@@ -153,7 +162,7 @@ fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit, onSmsSele
                     },
                 )
             }
-            MemberList(state, viewModel, onMemberClick, onBackup, onOldRecords = { confirmOldRecords = it })
+            MemberList(state, viewModel, onMemberClick, onBackup, onSettings, onOldRecords = { confirmOldRecords = it })
         }
         if (state.selection.isEmpty()) {
             ExtendedFloatingActionButton(
@@ -207,8 +216,10 @@ private fun MemberList(
     viewModel: HomeViewModel,
     onMemberClick: (Long) -> Unit,
     onBackup: () -> Unit,
+    onSettings: () -> Unit,
     onOldRecords: (List<Long>) -> Unit,
 ) {
+    val context = LocalContext.current
     val selecting = state.selection.isNotEmpty()
     val snackbar = LocalSnackbar.current
     val requestPermission = rememberSmsPermissionRequest { viewModel.onResume() }
@@ -241,6 +252,18 @@ private fun MemberList(
         state.banner?.takeIf { !selecting }?.let { banner ->
             item(key = "banner", contentType = "banner") {
                 when (banner) {
+                    HomeBanner.ClockWrong -> MbBanner(
+                        "Your phone's date is wrong (${Dates.formatFull(state.today)}). Fix it before recording payments.",
+                        BannerTone.DANGER,
+                        actionLabel = "Fix",
+                        onAction = { DeviceIntents.open(context, DeviceIntents.dateAndTime()) },
+                    )
+                    HomeBanner.OwnerNumberMissing -> MbBanner(
+                        "Add your phone number. Some reminders are waiting for it.",
+                        BannerTone.WARNING,
+                        actionLabel = "Add",
+                        onAction = onSettings,
+                    )
                     HomeBanner.SmsPermissionOff -> MbBanner(
                         "SMS permission is off. Reminders can't go until it's back on.",
                         BannerTone.DANGER,
@@ -268,6 +291,12 @@ private fun MemberList(
                             onAction = { onOldRecords(banner.memberIds) },
                         )
                     }
+                    HomeBanner.SendCopy -> MbBanner(
+                        "Keep a copy of your data off this phone, in case it's lost.",
+                        BannerTone.INFO,
+                        actionLabel = "Send",
+                        onAction = onBackup,
+                    )
                     is HomeBanner.LongOverdue -> {
                         val count = banner.memberIds.size
                         MbBanner(

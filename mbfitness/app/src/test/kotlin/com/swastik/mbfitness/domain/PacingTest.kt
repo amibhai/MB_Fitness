@@ -19,7 +19,8 @@ class PacingTest {
     private fun decide(sent: List<Sent>, parts: Int = 1, planned: Boolean = false, clock: Long = now) =
         Pacing.decide(clock, parts, planned, sent, limits)
 
-    private fun queued(id: Long, priority: Int = 3, parts: Int = 1, notBefore: Long = 0, createdAt: Long = 0, planned: Boolean = false) =
+    /** Due from the start of the test's day, and so planned that day too. */
+    private fun queued(id: Long, priority: Int = 3, parts: Int = 1, notBefore: Long = at(0), createdAt: Long = 0, planned: Boolean = false) =
         Queued(id, parts, priority, createdAt, notBefore, planned)
 
     @Test
@@ -195,5 +196,37 @@ class PacingTest {
     fun aBroadcastBeyondTomorrowNamesTheDate() {
         val batches = listOf(Pacing.Batch(5, now), Pacing.Batch(5, Dates.millisAt(day + 2, 9)))
         assertEquals("10 members × 1 part. 5 go now, 5 more on 6 Nov at 9:00 AM.", Pacing.describeBroadcast(10, 1, batches, now))
+    }
+
+    /**
+     * A late run at 10 PM holds its reminders until morning. "Due today" sent at 8 AM would be
+     * false, and the morning run hasn't replaced it yet (docs/DECISIONS.md).
+     */
+    @Test
+    fun aReminderWordedForYesterdayWaitsForTodaysRun() {
+        val yesterday = Dates.millisAt(day - 1, 22)
+        val stale = queued(1, planned = true, notBefore = yesterday)
+        assertTrue(Pacing.isStale(stale, at(8, 30)))
+        assertEquals(NextStep.WakeAt(at(9, 30)), Pacing.next(listOf(stale), at(8, 30), emptyList(), limits))
+        assertEquals("the morning run is due soon", NextStep.WakeAt(at(9)), Pacing.next(listOf(stale), at(7), emptyList(), limits))
+    }
+
+    @Test
+    fun aStaleReminderDoesntHoldUpAnythingElse() {
+        val stale = queued(1, priority = 2, planned = true, notBefore = Dates.millisAt(day - 1, 22))
+        val fresh = queued(2, priority = 4, planned = true)
+        assertEquals(NextStep.Send(fresh), Pacing.next(listOf(stale, fresh), now, emptyList(), limits))
+    }
+
+    @Test
+    fun yourOwnMessagesFromYesterdayStillGo() {
+        val manual = queued(1, priority = 1, notBefore = Dates.millisAt(day - 1, 22))
+        assertEquals(NextStep.Send(manual), Pacing.next(listOf(manual), now, emptyList(), limits))
+    }
+
+    @Test
+    fun aReminderPlannedTodayIsNeverStale() {
+        val planned = queued(1, planned = true, notBefore = at(9))
+        assertEquals(NextStep.Send(planned), Pacing.next(listOf(planned), now, emptyList(), limits))
     }
 }

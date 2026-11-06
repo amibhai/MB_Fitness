@@ -5,6 +5,7 @@ import com.swastik.mbfitness.domain.BackupRules
 import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.MessageKind
 import com.swastik.mbfitness.domain.MessageStatus
+import com.swastik.mbfitness.domain.PaymentKind
 import com.swastik.mbfitness.domain.PaymentMode
 import com.swastik.mbfitness.domain.RenewalRule
 import kotlinx.coroutines.test.runTest
@@ -74,7 +75,7 @@ class BackupManagerTest {
                 gymName = "Iron Temple",
                 trainerPhone = "+919000000099",
                 upiId = "gym@okbank",
-                reminderHour = 7,
+                reminderHour = 8,
                 renewalRule = RenewalRule.START_FROM_PAYMENT,
                 quietWeekdays = setOf(DayOfWeek.MONDAY, DayOfWeek.SUNDAY),
                 pinHash = "secret-hash",
@@ -166,7 +167,7 @@ class BackupManagerTest {
         val after = env.settings.current()
         assertEquals("Iron Temple", after.gymName)
         assertEquals("+919000000099", after.trainerPhone)
-        assertEquals(7, after.reminderHour)
+        assertEquals(8, after.reminderHour)
         assertEquals(RenewalRule.START_FROM_PAYMENT, after.renewalRule)
         assertEquals(setOf(DayOfWeek.MONDAY, DayOfWeek.SUNDAY), after.quietWeekdays)
         assertEquals("new-pin", after.pinHash)
@@ -412,31 +413,33 @@ class BackupManagerTest {
             assertTrue("after backup $index", folder.files.size <= 8)
         }
         assertEquals(8, folder.files.size)
-        assertEquals(BackupRules.fileName(env.clock.today()), BackupRules.newest(folder.names()))
+        assertEquals(BackupRules.fileName(env.clock.today()), BackupRules.newest(folder.names(), env.clock.today()))
     }
 
     @Test
     fun theWeeklyBackupOnlyRunsWhenDue() = runTest {
+        gymWithData()
         useFolder()
         // Friday, never backed up: due now.
-        assertTrue(backups.runWeeklyIfDue())
+        assertTrue(backups.runScheduledBackups())
         assertEquals(1, folder.files.size)
         // Saturday: not due.
         env.clock.day += 1
-        assertTrue(backups.runWeeklyIfDue())
+        assertTrue(backups.runScheduledBackups())
         assertEquals(1, folder.files.size)
         // Sunday: due.
         env.clock.day += 1
-        assertTrue(backups.runWeeklyIfDue())
+        assertTrue(backups.runScheduledBackups())
         assertEquals(2, folder.files.size)
     }
 
     @Test
     fun theWeeklyBackupSaysSoIfItCouldntHappen() = runTest {
-        assertTrue("no folder isn't a failure here. Health check nags about it.", backups.runWeeklyIfDue())
+        gymWithData()
+        assertTrue("no folder isn't a failure here. Health check nags about it.", backups.runScheduledBackups())
         useFolder()
         folder.usable = false
-        assertFalse(backups.runWeeklyIfDue())
+        assertFalse(backups.runScheduledBackups())
     }
 
     // ---- The safety copy ----
@@ -571,5 +574,186 @@ class BackupManagerTest {
         val id = gymWithData()
         env.repository.deleteMember(id)
         assertFalse("Rahul" in backups.membersCsv())
+    }
+
+    // ---- Final hardening (docs/DECISIONS.md) ----
+
+    @Test
+    fun aRestoreNeverLeavesTheReceiptCounterBehindItsReceipts() = runTest {
+        gymWithData()
+        val highest = env.db.counters().highestReceipt()!!
+        env.db.counters().set(CounterEntity(AppDatabase.RECEIPT_COUNTER, 1))
+        val file = backups.buildFile()!!
+        wipe()
+        backups.restore(ready(file).plan)
+        assertEquals(highest + 1, env.db.counters().value(AppDatabase.RECEIPT_COUNTER))
+    }
+
+    @Test
+    fun aDamagedLogoIsLeftOutButTheRestoreStillWorks() = runTest {
+        val id = gymWithData()
+        File(filesDir, "logo").mkdirs()
+        File(filesDir, "logo/logo_1.png").writeBytes(byteArrayOf(1, 2, 3))
+        env.settings.update { it.copy(logoFile = "logo/logo_1.png") }
+        val text = backups.buildFile()!!.toString(Charsets.UTF_8)
+        val spoiled = Regex(""""logoBase64":"[^"]*"""").replace(text, """"logoBase64":"%%% not base64 %%%"""")
+        assertNotEquals(text, spoiled)
+        wipe()
+        assertEquals(BackupRestoreResult.Restored(0), backups.restore(ready(spoiled.toByteArray()).plan))
+        assertNotNull(env.db.members().get(id))
+        assertNull(env.settings.current().logoFile)
+        assertEquals("Iron Temple", env.settings.current().gymName)
+    }
+
+    /** Replaying such a payment would fail for that member every time. */
+    @Test
+    fun aRenewalWithoutItsPlanLengthIsRefused() = runTest {
+        val id = gymWithData()
+        env.db.payments().insert(
+            PaymentEntity(receiptNo = 99, memberId = id, kind = PaymentKind.RENEWAL, charged = 1200, paid = 1200, paidOn = env.clock.today(), mode = PaymentMode.CASH, planMonths = null, createdAt = 1),
+        )
+        val opened = backups.open(backups.buildFile()!!)
+        assertTrue(opened.toString(), opened is RestoreOpen.NotABackup && "plan length" in opened.reason)
+    }
+
+    /** It would look like the newest backup and then fail to restore. */
+    @Test
+    fun aBackupThatDidntSaveWholeIsCaughtAndRemoved() = runTest {
+        gymWithData()
+        useFolder()
+        val cutting = object : BackupFolder {
+            val files = linkedMapOf<String, ByteArray>()
+            override fun isUsable() = true
+            override fun names() = files.keys.toList()
+            override fun read(name: String) = files[name]
+            override fun write(name: String, bytes: ByteArray) {
+                files[name] = bytes.copyOf(bytes.size / 2)
+            }
+            override fun delete(name: String) {
+                files.remove(name)
+            }
+        }
+        val manager = BackupManager(env.db, env.settings, env.vault, keyVault, env.clock, ErrorLogger(env.db, env.clock), "1.0.0", filesDir) { cutting }
+        assertTrue(manager.backupNow() is BackupOutcome.Failed)
+        assertTrue(cutting.files.isEmpty())
+        assertNull(env.settings.current().lastBackupDay)
+    }
+
+    @Test
+    fun restoreLatestGoesPastADamagedNewestFile() = runTest {
+        gymWithData()
+        val good = backups.buildFile()!!
+        folder.files["mbfitness_backup_2026-12-20.json"] = good
+        folder.files["mbfitness_backup_2026-12-27.json"] = "{ half a file".toByteArray()
+        assertTrue(good.contentEquals(backups.newestReadable(folder)))
+        folder.files.clear()
+        folder.files["mbfitness_backup_2026-12-27.json"] = "nothing".toByteArray()
+        assertNull(backups.newestReadable(folder))
+    }
+
+    /** So a damaged database can be put right even with no folder chosen. */
+    @Test
+    fun theAppKeepsItsOwnDailyCopyEvenWithNoFolder() = runTest {
+        val id = gymWithData()
+        assertTrue(backups.runScheduledBackups())
+        assertEquals(env.clock.today(), backups.ownCopyDay())
+        val bytes = backups.ownCopy()!!
+        val open = ready(bytes)
+        assertTrue(open.summary, open.summary.startsWith("2 members"))
+        // Aadhaar stays sealed in it, as in the safety copy (hard rule 11).
+        assertFalse(digits in bytes.toString(Charsets.UTF_8))
+        wipe()
+        backups.restore(open.plan)
+        assertNotNull(env.db.members().get(id))
+    }
+
+    @Test
+    fun onlyTheNewestSevenOwnCopiesAreKept() = runTest {
+        gymWithData()
+        repeat(BackupRules.OWN_COPIES_KEPT + 3) {
+            backups.runScheduledBackups()
+            env.clock.day += 1
+        }
+        assertEquals(BackupRules.OWN_COPIES_KEPT, File(filesDir, "own_backups").list()!!.size)
+    }
+
+    /** With nothing to protect, and so an emptied database can't push a good copy out. */
+    @Test
+    fun aGymWithNobodyInItMakesNoCopies() = runTest {
+        useFolder()
+        assertTrue(backups.runScheduledBackups())
+        assertNull(backups.ownCopyDay())
+        assertTrue(folder.files.isEmpty())
+    }
+
+    @Test
+    fun aCopyFromAnEmptiedDatabaseCantPushOutAGoodOne() = runTest {
+        gymWithData()
+        backups.runScheduledBackups()
+        val good = backups.ownCopy()!!
+        wipe()
+        env.clock.day += 1
+        backups.runScheduledBackups()
+        assertTrue(good.contentEquals(backups.ownCopy()))
+    }
+
+    @Test
+    fun todaysCopyIsOnlyMadeOnce() = runTest {
+        val id = gymWithData()
+        backups.runScheduledBackups()
+        val first = backups.ownCopy()!!
+        env.repository.recordRenewal(RenewalRequest(id, 1, 1200, PaymentMode.CASH, env.clock.today()))
+        backups.runScheduledBackups()
+        assertTrue(first.contentEquals(backups.ownCopy()))
+        env.clock.day += 1
+        backups.runScheduledBackups()
+        assertFalse("tomorrow's has the new payment", first.contentEquals(backups.ownCopy()))
+    }
+
+    /** A phone dying halfway through can't leave half a file looking like the newest copy. */
+    @Test
+    fun aDamagedOwnCopyGivesWayToTheOneBefore() = runTest {
+        gymWithData()
+        backups.runScheduledBackups()
+        val good = backups.ownCopy()!!
+        env.clock.day += 1
+        File(filesDir, "own_backups/${BackupRules.fileName(env.clock.today())}").writeText("{ half a fi")
+        File(filesDir, "own_backups/${BackupRules.fileName(env.clock.today())}.tmp").writeText("{ half a fi")
+        assertTrue(good.contentEquals(backups.ownCopy()))
+    }
+
+    /** Backing up a database Android just replaced with an empty one would push the good backups out. */
+    @Test
+    fun nothingAutomaticRunsWhileTheDatabaseIsDamaged() = runTest {
+        gymWithData()
+        useFolder()
+        val damaged = BackupManager(
+            env.db, env.settings, env.vault, keyVault, env.clock, ErrorLogger(env.db, env.clock), "1.0.0", filesDir,
+            databaseDamaged = { true },
+        ) { folder }
+        assertTrue(damaged.runScheduledBackups())
+        assertTrue(folder.files.isEmpty())
+        assertNull(damaged.ownCopyDay())
+    }
+
+    @Test
+    fun aCopyToSendIsMadeFreshEachTimeAndCountsOnceSent() = runTest {
+        gymWithData()
+        val first = backups.copyToSend() as CopyOutcome.Ready
+        assertTrue(ready(first.file.readBytes()).summary.startsWith("2 members"))
+        env.clock.day += 1
+        val second = backups.copyToSend() as CopyOutcome.Ready
+        assertEquals(listOf(second.file.name), File(filesDir, BackupManager.SHARE_FOLDER).list()!!.toList())
+        assertNull(env.settings.current().lastCopySentDay)
+        backups.copySent()
+        assertEquals(env.clock.today(), env.settings.current().lastCopySentDay)
+    }
+
+    @Test
+    fun aCopyToSendNeedsThePasswordIfThisPhoneLostIt() = runTest {
+        gymWithData()
+        assertTrue(backups.setPassword("correct horse", null))
+        keyVault.keyLost = true
+        assertEquals(CopyOutcome.PasswordNeeded, backups.copyToSend())
     }
 }

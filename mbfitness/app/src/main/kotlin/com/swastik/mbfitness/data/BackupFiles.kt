@@ -4,8 +4,11 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import com.swastik.mbfitness.domain.PackLanguage
+import com.swastik.mbfitness.domain.PaymentKind
 import com.swastik.mbfitness.domain.RenewalRule
 import kotlinx.serialization.Serializable
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
 import javax.crypto.Cipher
@@ -201,6 +204,25 @@ object BackupCrypto {
 }
 
 /** A folder the backups live in. An interface so tests don't need Android's file picker. */
+/** Far bigger than any real backup or member list. */
+const val MAX_PICKED_FILE_BYTES = 64 * 1024 * 1024
+private const val READ_CHUNK_BYTES = 64 * 1024
+
+/**
+ * Reads a file the person picked, or null if it's bigger than [limit]. A video picked by mistake
+ * can't be a backup, and reading it whole would run the app out of memory.
+ */
+fun InputStream.readUpTo(limit: Int): ByteArray? {
+    val buffer = ByteArrayOutputStream()
+    val chunk = ByteArray(READ_CHUNK_BYTES)
+    while (true) {
+        val count = read(chunk)
+        if (count < 0) return buffer.toByteArray()
+        if (buffer.size() + count > limit) return null
+        buffer.write(chunk, 0, count)
+    }
+}
+
 interface BackupFolder {
     fun isUsable(): Boolean
     fun names(): List<String>
@@ -231,6 +253,7 @@ object BackupValidator {
             data.events.any { it.memberId !in memberIds } -> "A member's history is broken"
             data.messages.any { it.memberId != null && it.memberId !in memberIds } -> "A message's member is missing"
             data.aadhaar.any { it.memberId !in memberIds } -> "An Aadhaar number's member is missing"
+            data.payments.any { it.kind == PaymentKind.RENEWAL && (it.planMonths ?: 0) < 1 } -> "A renewal is missing its plan length"
             data.templates.isEmpty() -> "The message templates are missing"
             data.counters.isEmpty() -> "The receipt counter is missing"
             else -> null

@@ -1,7 +1,13 @@
 package com.swastik.mbfitness.data
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.swastik.mbfitness.domain.PinRules
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -12,6 +18,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
+import java.io.IOException
+import java.nio.file.Files
 
 @RunWith(AndroidJUnit4::class)
 class AppLockTest {
@@ -135,5 +144,42 @@ class AppLockTest {
         val fresh = lock.replaceRecoveryCode()
         assertFalse(lock.checkRecoveryCode(old))
         assertTrue(lock.checkRecoveryCode(fresh))
+    }
+
+    /** The count of wrong guesses can't be saved on a full phone, and that can't keep him out. */
+    @Test
+    fun aFullPhoneCantKeepOutSomeoneWhoKnowsThePin() = runTest {
+        val real = PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.IO + SupervisorJob())) {
+            File(Files.createTempDirectory("mbf").toFile(), "settings.preferences_pb")
+        }
+        var full = false
+        val disk = object : DataStore<Preferences> {
+            override val data = real.data
+            override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences {
+                if (full) throw IOException("write failed: ENOSPC (No space left on device)")
+                return real.updateData(transform)
+            }
+        }
+        val fullLock = AppLock(SettingsStore(disk, forceTestMode = false), env.clock)
+        fullLock.setPin("1234", newRecoveryCode = true)
+        full = true
+        assertEquals(PinCheck.Correct, fullLock.checkPin("1234"))
+        assertTrue(fullLock.unlocked.value)
+    }
+
+    /** A clock that was wrong when the wait was set can't lock bhaiya out for years. */
+    @Test
+    fun aWaitLongerThanAnyRealOneIsIgnored() = runTest {
+        lock.setPin("1234", newRecoveryCode = true)
+        val aYear = 365L * 24 * 60 * 60 * 1000
+        env.settings.update { it.copy(pinFailures = 7, pinLockedUntil = env.clock.nowMillis() + aYear) }
+        assertEquals(PinCheck.Correct, lock.checkPin("1234"))
+    }
+
+    @Test
+    fun aRealWaitStillHolds() = runTest {
+        lock.setPin("1234", newRecoveryCode = true)
+        env.settings.update { it.copy(pinFailures = 5, pinLockedUntil = env.clock.nowMillis() + 30_000) }
+        assertTrue(lock.checkPin("1234") is PinCheck.LockedOut)
     }
 }

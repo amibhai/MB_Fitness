@@ -62,9 +62,14 @@ open class DeviceChecks(private val context: Context) {
     @Suppress("DEPRECATION")
     private fun slotsBeforeAndroid11(telephony: TelephonyManager): Int = telephony.phoneCount
 
-    /** Needs no permission, so it works before anything is granted. */
-    open fun hasSim(): Boolean =
-        context.getSystemService(TelephonyManager::class.java).simState == TelephonyManager.SIM_STATE_READY
+    /**
+     * Needs no permission, so it works before anything is granted. Each slot is asked, because a
+     * phone with two SIMs and no default reports "unknown" when asked about SIMs in general.
+     */
+    open fun hasSim(): Boolean {
+        val telephony = context.getSystemService(TelephonyManager::class.java)
+        return (0 until simSlots()).any { telephony.getSimState(it) == TelephonyManager.SIM_STATE_READY }
+    }
 
     open fun canListSims(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
@@ -79,6 +84,15 @@ open class DeviceChecks(private val context: Context) {
         } catch (_: SecurityException) {
             emptyList()
         }
+    }
+
+    /**
+     * True when a phone with two SIMs has no default for SMS, so it asks every time. Nobody is
+     * there to answer when a reminder goes, so it fails. Needs no permission.
+     */
+    open fun phoneAsksWhichSim(): Boolean {
+        if (!hasSim() || simSlots() < 2) return false
+        return SubscriptionManager.getDefaultSmsSubscriptionId() == SubscriptionManager.INVALID_SUBSCRIPTION_ID
     }
 
     /** Can only be told when the SIM list can be read. Otherwise the choice is assumed to stand. */
@@ -138,6 +152,8 @@ object DeviceIntents {
     private fun packageUri(context: Context) = "package:${context.packageName}".toUri()
 
     fun appInfo(context: Context) = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri(context))
+
+    fun dateAndTime() = Intent(Settings.ACTION_DATE_SETTINGS)
 
     fun exactAlarms(context: Context): Intent? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

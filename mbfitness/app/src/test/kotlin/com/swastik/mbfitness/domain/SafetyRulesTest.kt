@@ -29,8 +29,8 @@ class SafetyRulesTest {
 
     @Test
     fun theNewestBackupIsFoundForRestore() {
-        assertEquals(BackupRules.fileName(sunday), BackupRules.newest(listOf(BackupRules.fileName(friday), BackupRules.fileName(sunday), "z.txt")))
-        assertNull(BackupRules.newest(listOf("z.txt")))
+        assertEquals(BackupRules.fileName(sunday), BackupRules.newest(listOf(BackupRules.fileName(friday), BackupRules.fileName(sunday), "z.txt"), sunday))
+        assertNull(BackupRules.newest(listOf("z.txt"), sunday))
     }
 
     @Test
@@ -160,6 +160,7 @@ class SafetyRulesTest {
         pinSet = true,
         backupPasswordSet = false,
         errorCount = 0,
+        lastCopySentDay = friday - 3,
     )
 
     private fun HealthFacts.row(title: String) = HealthCheck.rows(this).single { it.title == title }
@@ -216,6 +217,77 @@ class SafetyRulesTest {
         assertEquals(HealthState.OK, facts().row("SIM").state)
         assertEquals(HealthState.PROBLEM, facts().copy(hasSim = false).row("SIM").state)
         assertEquals(HealthFix.PICK_SIM, facts().copy(chosenSimMissing = true).row("SIM").fix)
+    }
+
+    /** Nobody is there to pick a SIM when a reminder goes (docs/DECISIONS.md). */
+    @Test
+    fun aPhoneThatAsksWhichSimIsToldToChooseOne() {
+        val row = facts().copy(phoneAsksWhichSim = true).row("SIM")
+        assertEquals(HealthState.WARNING, row.state)
+        assertEquals(HealthFix.PICK_SIM, row.fix)
+        assertTrue(row.detail, "asks which SIM" in row.detail)
+    }
+
+    @Test
+    fun remindersThatNeverRanShowAsLateFromSetup() {
+        val hour = 60L * 60 * 1000
+        val never = facts().copy(lastRunAt = null, setupDoneAt = facts().nowMillis - 60 * hour).row("Reminders")
+        assertEquals(HealthState.PROBLEM, never.state)
+        assertTrue(never.detail, never.detail.startsWith("Reminders haven't run yet"))
+        assertEquals(HealthState.OK, facts().copy(lastRunAt = null, setupDoneAt = facts().nowMillis - hour).row("Reminders").state)
+    }
+
+    /** Backups in the phone's folder go if the phone is lost (docs/DECISIONS.md). */
+    @Test
+    fun aCopyOffThePhoneIsAskedForEveryMonth() {
+        assertEquals(HealthState.OK, facts().row("Copy off this phone").state)
+        assertEquals("Last sent ${Dates.formatShort(friday - 3)}", facts().row("Copy off this phone").detail)
+        val never = facts().copy(lastCopySentDay = null).row("Copy off this phone")
+        assertEquals(HealthState.WARNING, never.state)
+        assertEquals(HealthFix.BACKUP, never.fix)
+        assertEquals(HealthState.WARNING, facts().copy(lastCopySentDay = friday - 30).row("Copy off this phone").state)
+        assertEquals(HealthState.OK, facts().copy(lastCopySentDay = friday - 29).row("Copy off this phone").state)
+    }
+
+    @Test
+    fun backupFileNamesGiveTheirDayAndSortNewestFirst() {
+        val names = listOf("mbfitness_backup_2026-12-27.json", "notes.txt", "mbfitness_backup_2027-01-03.json", "mbfitness_backup_2026-12-20.json")
+        assertEquals(listOf("mbfitness_backup_2027-01-03.json", "mbfitness_backup_2026-12-27.json", "mbfitness_backup_2026-12-20.json"), BackupRules.newestFirst(names, friday + 30))
+        assertEquals(Dates.of(2027, 1, 3), BackupRules.dayOf("mbfitness_backup_2027-01-03.json"))
+        assertNull(BackupRules.dayOf("notes.txt"))
+        assertNull("not a real date", BackupRules.dayOf("mbfitness_backup_2026-13-45.json"))
+        assertTrue(BackupRules.isCopyDue(friday, null))
+    }
+
+    /** A clock that was wrong once can't stop backups until that date comes round. */
+    @Test
+    fun aBackupDatedInTheFutureDoesntStopBackups() {
+        val future = friday + 3000
+        assertTrue(BackupRules.isWeeklyDue(friday, future))
+        assertTrue(BackupRules.isOverdue(friday, future))
+        assertTrue(BackupRules.isCopyDue(friday, future))
+        val names = listOf("mbfitness_backup_2035-06-01.json", "mbfitness_backup_2026-12-27.json")
+        assertEquals("mbfitness_backup_2026-12-27.json", BackupRules.newest(names, friday))
+        assertEquals("the future one is still there as a last resort", 2, BackupRules.newestFirst(names, friday).size)
+    }
+
+    @Test
+    fun aPhoneShowingADateBeforeTheAppExistedIsCalledOut() {
+        assertTrue(ClockCheck.looksWrong(Dates.of(2020, 1, 1)))
+        assertFalse(ClockCheck.looksWrong(Dates.of(2026, 11, 6)))
+        val past = Dates.of(2020, 1, 1)
+        val row = facts().copy(today = past, nowMillis = Dates.millisAt(past, 10)).row("Phone's date")
+        assertEquals(HealthState.PROBLEM, row.state)
+        assertEquals(HealthFix.DATE_AND_TIME, row.fix)
+        assertFalse(HealthCheck.rows(facts()).any { it.title == "Phone's date" })
+    }
+
+    @Test
+    fun aMissingOwnerNumberIsCalledOut() {
+        assertEquals(HealthState.OK, facts().row("Your phone number").state)
+        val row = facts().copy(ownerNumberSet = false).row("Your phone number")
+        assertEquals(HealthState.WARNING, row.state)
+        assertEquals(HealthFix.GYM_DETAILS, row.fix)
     }
 
     @Test

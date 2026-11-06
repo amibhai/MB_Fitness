@@ -31,7 +31,19 @@ The certificate's SHA-256 fingerprint, which developer verification asks for, is
 
 The file is `app/build/outputs/apk/release/app-release.apk`, signed with the key above. On a computer without `keystore.properties`, the build makes an unsigned APK instead, which won't install.
 
-Raise `versionCode` in `app/build.gradle.kts` for every build you give bhaiya. `versionName` goes 1.0.0, 1.0.1 and so on.
+Raise `versionCode` in `app/build.gradle.kts` for every build you give bhaiya. `versionName` goes 1.0.0, 1.0.1 and so on. The current release is 1.0.1 (versionCode 2).
+
+**Keep `app/build/outputs/mapping/release/mapping.txt` with each APK you give him.** It's about 60 MB, so zip it, as `dist/MB-Fitness-Club-1.0.1-mapping.zip` is, and back it up with the key. The error log's crash details name the release build's renamed code, and this file turns them back into real class names and line numbers (Android Studio: Build, Analyze Stack Trace; or the `retrace` tool in the SDK). Every build makes a new one, so it has to be the one from that exact build.
+
+Debug builds are called "MB Fitness (test)" and install beside the real app (package `com.swastik.mbfitness.debug`), so testing never touches real data.
+
+To check a change on a release-style build, without replacing the real app:
+
+```
+./gradlew assembleRelease -Psmoke
+```
+
+This runs R8 as a release does, but under the package `com.swastik.mbfitness.smoke`, signed with the debug key, and with the test hooks. **Don't give it to anyone**, and run a normal `assembleRelease` afterwards, because it writes to the same `app-release.apk`.
 
 ## 3. Before giving it to anyone
 
@@ -43,7 +55,7 @@ Raise `versionCode` in `app/build.gradle.kts` for every build you give bhaiya. `
 
 ### Without USB
 
-The file to send is `mbfitness/dist/MB-Fitness-Club-1.0.0.apk`. It's the signed release, renamed, and git-ignored like every APK. A copy is also in your Pixel's Downloads folder.
+The file to send is `mbfitness/dist/MB-Fitness-Club-1.0.1.apk`. It's the signed release, renamed, and git-ignored like every APK. A copy is also in your Pixel's Downloads folder.
 
 1. Send it to him. Google Drive is the most reliable: upload the file, then share the link on WhatsApp, and he opens it in the Drive app. Sending the file itself on WhatsApp works too, and so does Quick Share if you're together.
 2. On his phone, open the file. Android asks to let that app (Drive, WhatsApp or Files) install apps: allow it, then tap **Install**.
@@ -76,8 +88,25 @@ Do these with the release build, on his phone.
 - [ ] Import the sample CSV with one deliberately bad row.
 - [ ] Reboot the phone. Airplane mode for an hour. Leave it overnight, and check the 9 AM run and the morning summary.
 - [ ] Back up, uninstall, reinstall, restore. Spot-check balances. Expect Aadhaar numbers to need re-entering unless a backup password was set.
+- [ ] **Send a copy** to his own Google Drive or WhatsApp, and check the file arrives. Then try **Pick a backup file** with it. This couldn't be tested with real apps before release, because the test phone's share sheet lists real people.
 - [ ] Test mode **off**. Import the real members. Ask him to tell members about SMS reminders, because consent has to be real.
 - [ ] First week: open Health check every 2 days, or ask him for a screenshot.
+
+## When bhaiya says something's wrong
+
+You probably can't look at the phone yourself, so ask for these:
+
+1. **A screenshot of Settings, Health check.** Every row that isn't green has its own fix button, and most problems end there.
+2. **The error log as text:** Health check, Error log, **Copy as text**, then paste it into WhatsApp to you. It never holds an Aadhaar number: any 12-digit number is hidden before it's written.
+3. For a crash, match the error log to that release's `mapping.txt` (section 2).
+
+The app recovers from most problems by itself:
+
+- A screen's failure shows "Something went wrong" and the app carries on, with the details in the error log.
+- A damaged data file is set aside, and the app offers the latest backup, the app's own daily copy, or a file he sent himself.
+- A damaged settings file runs setup again. Members and payments are untouched.
+- Reminders that stop for 2 days raise a notice that opens Health check.
+- If the app crashes 3 times in 10 minutes, it opens a plain recovery screen. He can tap **Try again**, or **Copy the details for Swastik** and paste them to you on WhatsApp, or **Send a copy of your data**. Those details include the phone, the app version and the crash.
 
 ## 6. Phones to try it on
 
@@ -128,9 +157,17 @@ Every morning at 9, the app sends fee reminders, and you get a short notificatio
 
 **Your phone may stop the app to save battery.** Health check shows the steps for your phone.
 
+**The app says "Something went wrong":** try again. If it keeps happening, open Health check, then **Error log**, tap **Copy as text** and paste it to Swastik on WhatsApp.
+
+**A notification says there's a problem:** tap it. It opens Health check, where the fix is one tap away.
+
 ## Keep your data safe
 
 Backups run every Sunday. **Don't delete the backup folder.**
+
+**Once a month, send a copy off the phone:** Settings, **Backup and restore**, **Send a copy**, then save it to Google Drive, or send it to yourself on WhatsApp. Home reminds you.
+
+**If this phone is lost or broken:** install the app on the new phone, tap **Restore from a backup** and pick the file. Google Drive shows up in the file picker. From WhatsApp, save the file to the phone's Downloads first.
 
 If you set a PIN, write down the recovery code and keep it safe. It's the only way back in if you forget your PIN. If you set a backup password and forget it, those backups can never be opened.
 

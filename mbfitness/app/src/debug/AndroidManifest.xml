@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Debug builds only: lets "Send a copy" be checked to the end without touching a real app. -->
+        <activity
+            android:name=".DebugShareTarget"
+            android:exported="true"
+            android:label="Test share target">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

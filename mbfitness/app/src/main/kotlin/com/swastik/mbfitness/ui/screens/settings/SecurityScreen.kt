@@ -1,5 +1,6 @@
 package com.swastik.mbfitness.ui.screens.settings
 
+import com.swastik.mbfitness.launchSafely
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,7 +35,6 @@ import com.swastik.mbfitness.ui.components.ScreenPadding
 import com.swastik.mbfitness.ui.components.SecondaryButton
 import com.swastik.mbfitness.ui.screens.lock.RecoveryCode
 import com.swastik.mbfitness.ui.theme.MbTheme
-import kotlinx.coroutines.launch
 
 private enum class SecurityDialog { NEW_CODE, TURN_OFF }
 
@@ -86,7 +86,7 @@ fun SecurityScreen(onBack: () -> Unit, onChangePin: () -> Unit) {
             DangerButton(
                 "Turn off PIN",
                 {
-                    scope.launch {
+                    scope.launchSafely(app) {
                         aadhaarSaved = app.database.members().countWithAadhaar()
                         dialog = SecurityDialog.TURN_OFF
                     }
@@ -112,7 +112,7 @@ fun SecurityScreen(onBack: () -> Unit, onChangePin: () -> Unit) {
             confirmLabel = "Get a new one",
             onConfirm = {
                 dialog = null
-                scope.launch { newCode = app.appLock.replaceRecoveryCode() }
+                scope.launchSafely(app) { newCode = app.appLock.replaceRecoveryCode() }
             },
             onDismiss = { dialog = null },
         )
@@ -126,7 +126,7 @@ fun SecurityScreen(onBack: () -> Unit, onChangePin: () -> Unit) {
             danger = true,
             onConfirm = {
                 dialog = null
-                scope.launch {
+                scope.launchSafely(app) {
                     app.appLock.removePin()
                     snackbar.show("PIN turned off")
                     onBack()

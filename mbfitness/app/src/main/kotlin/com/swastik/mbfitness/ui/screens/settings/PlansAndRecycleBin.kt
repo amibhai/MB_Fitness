@@ -1,5 +1,6 @@
 package com.swastik.mbfitness.ui.screens.settings
 
+import com.swastik.mbfitness.launchSafely
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,7 +52,6 @@ import com.swastik.mbfitness.ui.components.SecondaryButton
 import com.swastik.mbfitness.ui.components.StatusChip
 import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
-import kotlinx.coroutines.launch
 
 private const val MIN_MONTHS = 1
 private const val MAX_MONTHS = 24
@@ -59,7 +59,8 @@ private const val MAX_MONTHS = 24
 /** SPEC 10.2 screen 15. Retired plans stay on old payments, so plans are never deleted. */
 @Composable
 fun PlansScreen(onBack: () -> Unit) {
-    val members = (LocalContext.current.applicationContext as App).members
+    val context = LocalContext.current
+    val members = (context.applicationContext as App).members
     val plans by members.observePlans().collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     val colors = MbTheme.colors
@@ -108,7 +109,7 @@ fun PlansScreen(onBack: () -> Unit) {
             plan = null,
             onSave = { name, months, price ->
                 adding = false
-                scope.launch { members.addPlan(name, months, price) }
+                scope.launchSafely(context) { members.addPlan(name, months, price) }
             },
             onToggleActive = {},
             onDismiss = { adding = false },
@@ -119,11 +120,11 @@ fun PlansScreen(onBack: () -> Unit) {
             plan = plan,
             onSave = { name, months, price ->
                 editing = null
-                scope.launch { members.updatePlan(plan.copy(name = name.trim(), months = months, price = price)) }
+                scope.launchSafely(context) { members.updatePlan(plan.copy(name = name.trim(), months = months, price = price)) }
             },
             onToggleActive = {
                 editing = null
-                scope.launch { members.setPlanActive(plan.id, !plan.isActive) }
+                scope.launchSafely(context) { members.setPlanActive(plan.id, !plan.isActive) }
             },
             onDismiss = { editing = null },
         )
@@ -179,7 +180,8 @@ private fun PlanDialog(
 /** SPEC 10.2 screen 16. */
 @Composable
 fun RecycleBinScreen(onBack: () -> Unit) {
-    val app = LocalContext.current.applicationContext as App
+    val context = LocalContext.current
+    val app = context.applicationContext as App
     val members = app.members
     val rows by members.observeRecycleBin().collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
@@ -211,7 +213,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
                         LinkButton(
                             "Restore",
                             {
-                                scope.launch {
+                                scope.launchSafely(context) {
                                     when (val result = members.restoreMember(row.id)) {
                                         RestoreResult.Restored -> snackbar.show("${row.name} restored")
                                         is RestoreResult.PhoneTaken -> snackbar.show("Can't restore: ${result.existing.name} has this number now")

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 sealed interface PinCheck {
     data object Correct : PinCheck
@@ -103,12 +104,17 @@ class AppLock(
         val hash = current.pinHash ?: return PinCheck.NoPinSet
         val salt = current.pinSalt ?: return PinCheck.NoPinSet
         val now = clock.nowMillis()
-        current.pinLockedUntil?.takeIf { it > now }?.let { return PinCheck.LockedOut(it) }
+        PinRules.activeLockout(current.pinLockedUntil, now)?.let { return PinCheck.LockedOut(it) }
 
         val correct = withContext(Dispatchers.Default) { SecretHasher.matches(pin, salt, hash) }
         return if (correct) {
-            settings.update { it.copy(pinFailures = 0, pinLockedUntil = null) }
+            // Unlocked first: a full phone can't keep out someone who knows the PIN.
             unlockedFlow.value = true
+            try {
+                settings.update { it.copy(pinFailures = 0, pinLockedUntil = null) }
+            } catch (_: IOException) {
+                // Only the count of wrong guesses is out of date, and the next right PIN clears it.
+            }
             PinCheck.Correct
         } else {
             val failures = current.pinFailures + 1

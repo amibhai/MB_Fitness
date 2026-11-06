@@ -3,6 +3,8 @@
 <full-backup-content>
     <include domain="database" path="." />
     <exclude domain="database" path="mbfitness.db.damaged" />
+    <exclude domain="database" path="mbfitness.db.damaged-wal" />
+    <exclude domain="database" path="mbfitness.db.damaged-shm" />
     <include domain="file" path="datastore/" />
     <include domain="file" path="logo/" />
 </full-backup-content>

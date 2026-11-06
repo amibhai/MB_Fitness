@@ -16,6 +16,8 @@ enum class HealthFix {
     TEST_MODE,
     SET_PIN,
     ERROR_LOG,
+    GYM_DETAILS,
+    DATE_AND_TIME,
 }
 
 data class HealthRow(
@@ -57,6 +59,14 @@ data class HealthFacts(
     val pinSet: Boolean,
     val backupPasswordSet: Boolean,
     val errorCount: Int,
+    /** When setup finished, so reminders that never ran once still show as late. */
+    val setupDoneAt: Long? = null,
+    /** Two SIMs, none chosen, and the phone asks which to use every time. */
+    val phoneAsksWhichSim: Boolean = false,
+    /** The day a backup was last sent off the phone. */
+    val lastCopySentDay: Long? = null,
+    /** Reminders that quote the owner's number wait until it's set. */
+    val ownerNumberSet: Boolean = true,
 )
 
 /** Turns the facts into rows, each with a state and, where it helps, a fix (SPEC 13). */
@@ -64,6 +74,7 @@ object HealthCheck {
     private const val BYTES_PER_MB = 1024.0 * 1024
 
     fun rows(facts: HealthFacts): List<HealthRow> = listOfNotNull(
+        clock(facts),
         reminders(facts),
         sms(facts),
         facts.exactAlarmsAllowed?.let(::exactAlarms),
@@ -71,8 +82,10 @@ object HealthCheck {
         notifications(facts),
         facts.hibernationExempt?.let(::hibernation),
         sim(facts),
+        ownerNumber(facts),
         usage(facts),
         backup(facts),
+        offPhoneCopy(facts),
         database(facts),
         facts.lastExitReason?.let { HealthRow("Last time the app stopped", HealthState.OK, it) },
         testMode(facts),
@@ -82,9 +95,30 @@ object HealthCheck {
 
     fun worst(rows: List<HealthRow>): HealthState = rows.maxOfOrNull { it.state } ?: HealthState.OK
 
+    /** Only shown when it's wrong: with a right date, there's nothing to say. */
+    private fun clock(facts: HealthFacts): HealthRow? =
+        if (ClockCheck.looksWrong(facts.today)) {
+            HealthRow(
+                "Phone's date",
+                HealthState.PROBLEM,
+                "It says ${Dates.formatFull(facts.today)}, which can't be right. Reminders wait until it's fixed.",
+                "Fix",
+                HealthFix.DATE_AND_TIME,
+            )
+        } else {
+            null
+        }
+
+    private fun ownerNumber(facts: HealthFacts): HealthRow =
+        if (facts.ownerNumberSet) {
+            HealthRow("Your phone number", HealthState.OK, "Set")
+        } else {
+            HealthRow("Your phone number", HealthState.WARNING, "Not set, so reminders that quote it can't go.", "Add", HealthFix.GYM_DETAILS)
+        }
+
     private fun reminders(facts: HealthFacts): HealthRow {
         val detail = "${ReminderSchedule.lastRanText(facts.nowMillis, facts.lastRunAt)}. Next: ${MessageLabels.whenText(facts.nextRunAt, facts.nowMillis)}."
-        return when (ReminderSchedule.health(facts.nowMillis, facts.lastRunAt)) {
+        return when (ReminderSchedule.health(facts.nowMillis, facts.lastRunAt, facts.setupDoneAt)) {
             RunHealth.OK -> HealthRow("Reminders", HealthState.OK, detail)
             RunHealth.LATE -> HealthRow("Reminders", HealthState.WARNING, detail, "Run now", HealthFix.RUN_REMINDERS)
             RunHealth.VERY_LATE -> HealthRow("Reminders", HealthState.PROBLEM, detail, "Fix", HealthFix.RUN_REMINDERS)
@@ -136,6 +170,13 @@ object HealthCheck {
     private fun sim(facts: HealthFacts): HealthRow = when {
         !facts.hasSim -> HealthRow("SIM", HealthState.PROBLEM, "No SIM found, so SMS can't go")
         facts.chosenSimMissing -> HealthRow("SIM", HealthState.WARNING, "The SIM you chose isn't in this phone. Using the default one.", "Choose", HealthFix.PICK_SIM)
+        facts.phoneAsksWhichSim -> HealthRow(
+            "SIM",
+            HealthState.WARNING,
+            "Your phone asks which SIM to use for each SMS, so reminders may fail. Choose one for the app.",
+            "Choose",
+            HealthFix.PICK_SIM,
+        )
         else -> HealthRow("SIM", HealthState.OK, "Ready")
     }
 
@@ -156,6 +197,16 @@ object HealthCheck {
             !facts.folderWritable -> HealthRow("Backup", HealthState.PROBLEM, "$last. The folder can't be reached any more.", "Fix", HealthFix.BACKUP)
             BackupRules.isOverdue(facts.today, facts.lastBackupDay) -> HealthRow("Backup", HealthState.WARNING, "$last. That's overdue.", "Back up", HealthFix.BACKUP)
             else -> HealthRow("Backup", HealthState.OK, last)
+        }
+    }
+
+    /** A backup in the phone's own folder goes if the phone is lost, so a copy should live elsewhere too. */
+    private fun offPhoneCopy(facts: HealthFacts): HealthRow {
+        val sent = facts.lastCopySentDay
+        return when {
+            sent == null -> HealthRow("Copy off this phone", HealthState.WARNING, "None sent yet. Send one to your WhatsApp or Drive, so a lost phone doesn't lose your data.", "Send", HealthFix.BACKUP)
+            BackupRules.isCopyDue(facts.today, sent) -> HealthRow("Copy off this phone", HealthState.WARNING, "Last sent ${Dates.formatShort(sent)}. Time to send a new one.", "Send", HealthFix.BACKUP)
+            else -> HealthRow("Copy off this phone", HealthState.OK, "Last sent ${Dates.formatShort(sent)}")
         }
     }
 

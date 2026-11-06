@@ -143,6 +143,10 @@ interface MemberDao {
     @Query("SELECT COUNT(*) FROM members WHERE aadhaarLast4 IS NOT NULL AND deletedAt IS NULL")
     suspend fun countWithAadhaar(): Int
 
+    /** Everyone, the recycle bin included. */
+    @Query("SELECT COUNT(*) FROM members")
+    suspend fun countAll(): Int
+
     @Query("SELECT id, name, phone, aadhaarEnc FROM members WHERE deletedAt IS NULL AND aadhaarLast4 = :last4 AND id != :exceptId")
     suspend fun aadhaarCandidates(last4: String, exceptId: Long): List<AadhaarCandidate>
 

@@ -1,6 +1,7 @@
 package com.swastik.mbfitness.domain
 
 import java.time.LocalDate
+import java.time.format.DateTimeParseException
 
 /** When backups happen, what they're called and how long they're kept (SPEC 12). */
 object BackupRules {
@@ -23,17 +24,47 @@ object BackupRules {
         names.filter(::isBackupFile).sortedDescending().drop(keep)
 
     /** The newest backup in a folder, for "Restore latest backup". */
-    fun newest(names: List<String>): String? = names.filter(::isBackupFile).maxOrNull()
+    fun newest(names: List<String>, today: Long): String? = newestFirst(names, today).firstOrNull()
 
-    /** Sunday's run, or the next run after a missed Sunday. */
+    /**
+     * Backups, newest first, so a damaged newest file can give way to the one before it. A file
+     * dated in the future was named by a wrong clock, so it can't be trusted as the newest.
+     */
+    fun newestFirst(names: List<String>, today: Long): List<String> {
+        val (real, future) = names.filter(::isBackupFile).partition { (dayOf(it) ?: 0) <= today }
+        return real.sortedDescending() + future.sortedDescending()
+    }
+
+    /** The day in a backup's name. Null if it isn't a real date. */
+    fun dayOf(name: String): Long? = NAME.matchEntire(name)?.groupValues?.get(1)?.let {
+        try {
+            LocalDate.parse(it).toEpochDay()
+        } catch (_: DateTimeParseException) {
+            null
+        }
+    }
+
+    /** The app's own daily copies, kept whatever else is set up (docs/DECISIONS.md). */
+    const val OWN_COPIES_KEPT = 7
+
+    /**
+     * Sunday's run, or the next run after a missed Sunday. A last backup dated in the future means
+     * the clock was wrong, and it can't be allowed to stop backups until that date comes round.
+     */
     fun isWeeklyDue(today: Long, lastBackupDay: Long?): Boolean {
         val lastSunday = today - Dates.dayOfWeek(today).value % DAYS_IN_WEEK
-        return lastBackupDay == null || lastBackupDay < lastSunday
+        return lastBackupDay == null || lastBackupDay < lastSunday || lastBackupDay > today
     }
+
+    /** How often a copy should be sent off the phone (WhatsApp, Drive). */
+    const val COPY_EVERY_DAYS = 30L
+
+    fun isCopyDue(today: Long, lastSentDay: Long?): Boolean =
+        lastSentDay == null || today - lastSentDay >= COPY_EVERY_DAYS || lastSentDay > today
 
     /** A weekly job a day late is fine. More than that, and something is wrong. */
     fun isOverdue(today: Long, lastBackupDay: Long?): Boolean =
-        lastBackupDay == null || today - lastBackupDay > OVERDUE_AFTER_DAYS
+        lastBackupDay == null || today - lastBackupDay > OVERDUE_AFTER_DAYS || lastBackupDay > today
 
     /** "120 members, 840 payments, last payment 3 Nov" (SPEC 12). */
     fun describe(members: Int, payments: Int, lastPaymentDay: Long?): String = buildString {

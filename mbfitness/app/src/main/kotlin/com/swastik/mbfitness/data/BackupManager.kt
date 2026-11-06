@@ -1,5 +1,6 @@
 package com.swastik.mbfitness.data
 
+import android.database.SQLException
 import androidx.room.withTransaction
 import com.swastik.mbfitness.domain.BackupRules
 import com.swastik.mbfitness.domain.CsvExport
@@ -36,6 +37,13 @@ sealed interface RestoreOpen {
     data class Ready(val summary: String, val aadhaarNote: String?, val plan: RestorePlan) : RestoreOpen
 }
 
+/** A backup file ready for "Send a copy". */
+sealed interface CopyOutcome {
+    data class Ready(val file: File) : CopyOutcome
+    data object PasswordNeeded : CopyOutcome
+    data class Failed(val reason: String) : CopyOutcome
+}
+
 sealed interface BackupRestoreResult {
     data class Restored(val aadhaarToReenter: Int) : BackupRestoreResult
     data object SafetyCopyFailed : BackupRestoreResult
@@ -55,6 +63,8 @@ class BackupManager(
     private val errors: ErrorLogger,
     private val appVersion: String,
     private val filesDir: File,
+    /** True while the database is known to be damaged and not yet restored or accepted. */
+    private val databaseDamaged: () -> Boolean = { false },
     private val folderFor: (String) -> BackupFolder,
 ) {
     private val dao get() = db.backup()
@@ -93,31 +103,38 @@ class BackupManager(
     private fun encodeFile(file: BackupFile): ByteArray = json.encodeToString(file).toByteArray()
 
     private suspend fun collect(current: AppSettings, fullAadhaar: Boolean): BackupData {
-        val members = dao.members()
-        // With a password, the real numbers go inside. A number this phone can't open stays sealed.
+        // One transaction, so a member added while this runs can't leave a payment in the file
+        // without its member, which would make the file refuse to restore.
+        val snapshot = db.withTransaction {
+            BackupData(
+                exportedOn = clock.today(),
+                settings = current.toBackup(),
+                plans = dao.plans(),
+                members = dao.members(),
+                payments = dao.payments(),
+                freezes = dao.freezes(),
+                events = dao.events(),
+                messages = dao.messages(),
+                templates = dao.templates(),
+                broadcasts = dao.broadcasts(),
+                quietDates = dao.quietDates(),
+                counters = dao.counters(),
+            )
+        }
+        // With a password, the real numbers go inside. A number this phone can't open stays
+        // sealed. Keystore work is slow, so it happens after the transaction.
         val numbers = if (fullAadhaar) {
-            members.mapNotNull { member ->
+            snapshot.members.mapNotNull { member ->
                 member.aadhaarEnc?.let(vault::decrypt)?.let { AadhaarEntry(member.id, it) }
             }
         } else {
             emptyList()
         }
         val opened = numbers.map { it.memberId }.toSet()
-        return BackupData(
-            exportedOn = clock.today(),
-            settings = current.toBackup(),
+        return snapshot.copy(
             logoBase64 = current.logoFile?.let { File(filesDir, it) }?.takeIf { it.exists() }?.let { base64(it.readBytes()) },
-            plans = dao.plans(),
-            members = members.map { if (it.id in opened) it.copy(aadhaarEnc = null) else it },
+            members = snapshot.members.map { if (it.id in opened) it.copy(aadhaarEnc = null) else it },
             aadhaar = numbers,
-            payments = dao.payments(),
-            freezes = dao.freezes(),
-            events = dao.events(),
-            messages = dao.messages(),
-            templates = dao.templates(),
-            broadcasts = dao.broadcasts(),
-            quietDates = dao.quietDates(),
-            counters = dao.counters(),
         )
     }
 
@@ -133,6 +150,12 @@ class BackupManager(
                 val today = clock.today()
                 val name = BackupRules.fileName(today)
                 folder.write(name, bytes)
+                // A file that didn't save whole would look like the newest backup and fail to
+                // restore, so it's read back before the old ones are tidied away.
+                if (!folder.read(name).contentEquals(bytes)) {
+                    runCatching { folder.delete(name) }
+                    throw IOException("The backup file didn't save properly")
+                }
                 BackupRules.filesToDelete(folder.names()).forEach(folder::delete)
                 settings.update { it.copy(lastBackupDay = today) }
                 BackupOutcome.Saved(name)
@@ -146,12 +169,110 @@ class BackupManager(
         }
     }
 
-    /** Part of the daily run. False means it was due and didn't happen. */
-    suspend fun runWeeklyIfDue(): Boolean {
+    /**
+     * Part of the daily run. False means a folder backup was due and didn't happen. The app's own
+     * copy is made first and can't get in the way of it.
+     */
+    suspend fun runScheduledBackups(): Boolean {
+        // Android replaces a damaged database with an empty one. Backing that up every week would
+        // push the good backups out, so nothing automatic runs until it's restored or accepted.
+        if (databaseDamaged()) return true
+        // With nobody in the gym there's nothing to protect, and however the data came to be
+        // empty, a copy of that must never push a good one out.
+        if (db.members().countAll() == 0) return true
         val current = settings.current()
+        try {
+            keepOwnCopyIfDue(current)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            errors.log("Backup", "Own copy failed: ${error.javaClass.simpleName}")
+        }
         if (current.backupFolderUri == null) return true
         if (!BackupRules.isWeeklyDue(clock.today(), current.lastBackupDay)) return true
         return backupNow() is BackupOutcome.Saved
+    }
+
+    // ---- The app's own copies (docs/DECISIONS.md) ----
+
+    private val ownCopies get() = File(filesDir, OWN_COPIES_FOLDER)
+
+    /**
+     * Every day the app keeps a copy in its own storage too, whatever else is set up, so a
+     * damaged database loses at most a day, even with no folder chosen. Aadhaar stays sealed, as
+     * in the safety copy. Uninstalling the app removes these, which is why folders and "Send a
+     * copy" still matter. It's written under another name first, so a phone dying halfway can't
+     * leave half a file looking like the newest copy.
+     */
+    private suspend fun keepOwnCopyIfDue(current: AppSettings) = withContext(Dispatchers.IO) {
+        val today = clock.today()
+        if (ownCopyDay() == today) return@withContext
+        val plain = encodeFile(BackupFile(BackupRules.FORMAT, AppDatabase.VERSION, appVersion, data = collect(current, fullAadhaar = false)))
+        ownCopies.mkdirs()
+        val name = BackupRules.fileName(today)
+        val unfinished = File(ownCopies, "$name.tmp")
+        unfinished.writeBytes(plain)
+        if (!unfinished.renameTo(File(ownCopies, name))) throw IOException("Could not finish the copy")
+        BackupRules.filesToDelete(ownCopies.list().orEmpty().toList(), BackupRules.OWN_COPIES_KEPT).forEach { File(ownCopies, it).delete() }
+    }
+
+    /** The newest of the app's own copies that opens, so a damaged one gives way to the one before. */
+    suspend fun ownCopy(): ByteArray? = withContext(Dispatchers.IO) {
+        for (name in BackupRules.newestFirst(ownCopies.list().orEmpty().toList(), clock.today())) {
+            val bytes = try {
+                File(ownCopies, name).readBytes()
+            } catch (_: IOException) {
+                continue
+            }
+            if (open(bytes) !is RestoreOpen.NotABackup) return@withContext bytes
+        }
+        null
+    }
+
+    fun ownCopyDay(): Long? = BackupRules.newest(ownCopies.list().orEmpty().toList(), clock.today())?.let(BackupRules::dayOf)
+
+    /** The backup "Restore latest backup" would start from. */
+    fun latestName(folder: BackupFolder): String? = BackupRules.newest(folder.names(), clock.today())
+
+    /** The newest backup in [folder] that opens, so a damaged newest file can't hide the good ones. */
+    suspend fun newestReadable(folder: BackupFolder): ByteArray? {
+        for (name in BackupRules.newestFirst(folder.names(), clock.today())) {
+            val bytes = try {
+                folder.read(name)
+            } catch (_: IOException) {
+                null
+            } catch (_: SecurityException) {
+                null
+            } ?: continue
+            if (open(bytes) !is RestoreOpen.NotABackup) return bytes
+        }
+        return null
+    }
+
+    /**
+     * A backup to send off the phone with "Send a copy" (docs/DECISIONS.md). It's protected the
+     * same way as folder backups, and only the newest one waits in the app's own storage.
+     */
+    suspend fun copyToSend(): CopyOutcome = try {
+        withContext(Dispatchers.IO) {
+            val bytes = buildFile() ?: return@withContext CopyOutcome.PasswordNeeded
+            val folder = File(filesDir, SHARE_FOLDER).apply { mkdirs() }
+            folder.listFiles()?.forEach(File::delete)
+            val file = File(folder, BackupRules.fileName(clock.today()))
+            file.writeBytes(bytes)
+            CopyOutcome.Ready(file)
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        errors.log("Backup", "Copy failed: ${error.javaClass.simpleName}")
+        CopyOutcome.Failed(error.javaClass.simpleName)
+    }
+
+    /** An app was picked to send the copy to. */
+    suspend fun copySent() {
+        val today = clock.today()
+        settings.update { it.copy(lastCopySentDay = today) }
     }
 
     // ---- Backup password ----
@@ -230,33 +351,53 @@ class BackupManager(
 
     /** Saves a safety copy first, then replaces everything in one transaction (SPEC 12). */
     suspend fun restore(plan: RestorePlan): BackupRestoreResult {
-        if (!saveSafetyCopy()) return BackupRestoreResult.SafetyCopyFailed
+        // A damaged database can't give a safety copy, and it's what this restore is there to fix.
+        if (!saveSafetyCopy() && !databaseDamaged()) return BackupRestoreResult.SafetyCopyFailed
         val data = plan.data
         return try {
             // Keystore work is slow, so it happens before the transaction opens.
             val members = withContext(Dispatchers.IO) { resealForThisPhone(data) }
-            db.withTransaction {
-                clearEverything()
-                dao.insertPlans(data.plans)
-                dao.insertMembers(members)
-                dao.insertPayments(data.payments)
-                dao.insertFreezes(data.freezes)
-                dao.insertEvents(data.events)
-                dao.insertMessages(data.messages)
-                dao.insertTemplates(data.templates)
-                dao.insertBroadcasts(data.broadcasts)
-                dao.insertQuietDates(data.quietDates)
-                dao.insertCounters(data.counters)
-                dao.stopUnsent(STOPPED_BY_RESTORE)
+            // A damaged logo is left out rather than failing the restore after the data is in.
+            val logoBytes = data.logoBase64?.let { encoded -> runCatching { fromBase64(encoded) }.getOrNull() }
+            try {
+                replaceEverything(data, members)
+            } catch (error: SQLException) {
+                // A damaged file gives way on the first try: Android sets it aside and starts a new one.
+                if (!databaseDamaged()) throw error
+                replaceEverything(data, members)
             }
-            val logo = withContext(Dispatchers.IO) { restoreLogo(data.logoBase64) }
-            settings.update { it.fromBackup(data.settings, logo, clock.today()) }
-            BackupRestoreResult.Restored(members.count { it.aadhaarLast4 != null && it.aadhaarEnc?.let(vault::decrypt) == null })
+            // The data is back, so nothing after this can turn the restore into a failure.
+            try {
+                val logo = withContext(Dispatchers.IO) { restoreLogo(logoBytes) }
+                settings.update { it.fromBackup(data.settings, logo, clock.today()) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                errors.log("Restore", "Data restored, settings not: ${error.javaClass.simpleName}")
+            }
+            BackupRestoreResult.Restored(withContext(Dispatchers.IO) { members.count { it.aadhaarLast4 != null && it.aadhaarEnc?.let(vault::decrypt) == null } })
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             errors.log("Restore", "Failed: ${error.javaClass.simpleName}")
             BackupRestoreResult.Failed(error.javaClass.simpleName)
+        }
+    }
+
+    private suspend fun replaceEverything(data: BackupData, members: List<MemberEntity>) {
+        db.withTransaction {
+            clearEverything()
+            dao.insertPlans(data.plans)
+            dao.insertMembers(members)
+            dao.insertPayments(data.payments)
+            dao.insertFreezes(data.freezes)
+            dao.insertEvents(data.events)
+            dao.insertMessages(data.messages)
+            dao.insertTemplates(data.templates)
+            dao.insertBroadcasts(data.broadcasts)
+            dao.insertQuietDates(data.quietDates)
+            dao.insertCounters(withSafeReceiptCounter(data))
+            dao.stopUnsent(STOPPED_BY_RESTORE)
         }
     }
 
@@ -280,14 +421,22 @@ class BackupManager(
         dao.clearCounters()
     }
 
-    private fun restoreLogo(encoded: String?): String? {
+    private fun restoreLogo(bytes: ByteArray?): String? {
         val folder = File(filesDir, LOGO_FOLDER)
         folder.listFiles()?.forEach(File::delete)
-        if (encoded == null) return null
+        if (bytes == null) return null
         folder.mkdirs()
         val name = "logo_${clock.nowMillis()}.png"
-        File(folder, name).writeBytes(fromBase64(encoded))
+        File(folder, name).writeBytes(bytes)
         return "$LOGO_FOLDER/$name"
+    }
+
+    /** The counter can never be behind a receipt already in the file, so no number is used twice. */
+    private fun withSafeReceiptCounter(data: BackupData): List<CounterEntity> {
+        val nextFree = (data.payments.mapNotNull { it.receiptNo }.maxOrNull() ?: 0) + 1
+        val saved = data.counters.firstOrNull { it.name == AppDatabase.RECEIPT_COUNTER }?.value ?: 1
+        return data.counters.filter { it.name != AppDatabase.RECEIPT_COUNTER } +
+            CounterEntity(AppDatabase.RECEIPT_COUNTER, maxOf(saved, nextFree))
     }
 
     /**
@@ -310,6 +459,8 @@ class BackupManager(
             }
             true
         } catch (_: IOException) {
+            false
+        } catch (_: SQLException) {
             false
         }
     }
@@ -424,10 +575,16 @@ class BackupManager(
         packLanguage = from.packLanguage,
         lastDailyRunDay = today,
         onboardingDone = true,
+        setupDoneAt = setupDoneAt ?: clock.nowMillis(),
+        settingsReset = false,
     )
 
     companion object {
         const val LOGO_FOLDER = "logo"
+
+        /** Matches res/xml/shared_files.xml. */
+        const val SHARE_FOLDER = "shared"
+        private const val OWN_COPIES_FOLDER = "own_backups"
         private const val NOT_A_BACKUP = "This isn't an MB Fitness backup file."
         private const val STOPPED_BY_RESTORE = "Not sent: the data was restored from a backup"
         private const val MAX_ITERATIONS = 10_000_000

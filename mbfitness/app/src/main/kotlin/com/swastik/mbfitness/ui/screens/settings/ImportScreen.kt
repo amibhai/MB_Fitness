@@ -23,7 +23,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.swastik.mbfitness.data.ImportResult
+import com.swastik.mbfitness.data.MAX_PICKED_FILE_BYTES
 import com.swastik.mbfitness.data.MemberRepository
+import com.swastik.mbfitness.data.readUpTo
 import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.ImportPreview
 import com.swastik.mbfitness.domain.ImportRow
@@ -74,7 +76,7 @@ class ImportViewModel(
         viewModelScope.launch {
             val read = withContext(Dispatchers.IO) {
                 try {
-                    resolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    resolver.openInputStream(uri)?.use { it.readUpTo(MAX_PICKED_FILE_BYTES)?.toString(Charsets.UTF_8) }
                 } catch (_: IOException) {
                     null
                 } catch (_: SecurityException) {
@@ -124,6 +126,9 @@ class ImportViewModel(
                 // Someone was added between the preview and now. Nothing was saved.
                 uiState.update { it.copy(working = false, error = "One of these numbers was just added. Nothing was imported. Check again.") }
                 refreshPreview()
+            } finally {
+                // Whatever went wrong, nothing was saved and the button has to come back.
+                uiState.update { it.copy(working = false) }
             }
         }
     }

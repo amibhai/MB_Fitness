@@ -154,7 +154,8 @@ class OnboardingViewModel(private val app: App, simSlots: Int, sdk: Int) : ViewM
 
     fun finish(onDone: () -> Unit = {}) {
         viewModelScope.launch {
-            app.settings.update { it.copy(onboardingDone = true) }
+            val now = app.clock.nowMillis()
+            app.settings.update { it.copy(onboardingDone = true, setupDoneAt = it.setupDoneAt ?: now, settingsReset = false) }
             onDone()
         }
     }

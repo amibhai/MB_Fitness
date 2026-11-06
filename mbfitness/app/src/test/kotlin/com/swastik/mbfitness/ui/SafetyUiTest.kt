@@ -48,7 +48,7 @@ class SafetyUiTest {
     private val today get() = app.fakeClock.today()
 
     private fun showApp() {
-        runBlocking { app.settings.update { it.copy(lastBackupDay = app.fakeClock.today()) } }
+        runBlocking { app.settings.update { it.copy(lastBackupDay = app.fakeClock.today(), trainerPhone = it.trainerPhone.ifBlank { "+919000000099" }) } }
         compose.setContent { MbTheme { AppNavigation() } }
     }
 
@@ -363,13 +363,45 @@ class SafetyUiTest {
     }
 
     @Test
-    fun aDamagedBackupIsRefusedInPlainWords() {
+    fun aFolderWithNoReadableBackupSaysSoInPlainWords() {
         useFolder()
         app.fakeFolder.files[BackupRules.fileName(today)] = "this is not a backup".toByteArray()
         showApp()
         openSettings("Backup and restore")
         tap("Restore latest backup")
-        waitForText("This isn't an MB Fitness backup file.")
+        waitForText("No backup in that folder can be read.")
+    }
+
+    /** It's made daily and folder backups weekly, so it's often the newer of the two. */
+    @Test
+    fun theAppsNewerCopyIsOfferedAboveAnOlderFolderBackup() {
+        useFolder()
+        addMember()
+        app.fakeFolder.files[BackupRules.fileName(today - 7)] = runBlocking { app.backups.buildFile()!! }
+        runBlocking {
+            app.settings.update { it.copy(lastBackupDay = today) }
+            app.backups.runScheduledBackups()
+        }
+        showApp()
+        openSettings("Backup and restore")
+        scrollListTo("Restore latest backup")
+        tap("Restore the app's newer copy (1 Jan)")
+        waitForText("Replace everything?")
+        waitForText("1 member")
+    }
+
+    /** A newest file that didn't save whole mustn't hide the good one before it. */
+    @Test
+    fun restoreLatestUsesTheNewestBackupThatOpens() {
+        useFolder()
+        addMember()
+        app.fakeFolder.files[BackupRules.fileName(today - 7)] = runBlocking { app.backups.buildFile()!! }
+        app.fakeFolder.files[BackupRules.fileName(today)] = "{ half a fi".toByteArray()
+        showApp()
+        openSettings("Backup and restore")
+        tap("Restore latest backup")
+        waitForText("Replace everything?")
+        waitForText("1 member")
     }
 
     @Test
@@ -433,6 +465,54 @@ class SafetyUiTest {
         compose.setContent { MbTheme { AppNavigation() } }
         waitForText("Your backup is overdue.")
         assertTrue(gone("60+ days overdue"))
+    }
+
+    /** Backups in a folder stay on the phone, so once a month Home asks for a copy elsewhere. */
+    @Test
+    fun homeAsksForACopyOffThePhoneOnceEverythingElseIsFine() {
+        runBlocking {
+            app.settings.update { it.copy(backupFolderUri = "folder", lastBackupDay = app.fakeClock.today(), trainerPhone = "+919000000099") }
+            app.members.addMember(MemberDraft("Rahul Sharma", "9876543210", 1, app.fakeClock.today()))
+        }
+        compose.setContent { MbTheme { AppNavigation() } }
+        waitForText("Keep a copy of your data off this phone")
+        tap("Send")
+        waitForText("None sent yet")
+        scrollListTo("Send a copy")
+    }
+
+    @Test
+    fun aCopySentThisMonthKeepsHomeQuiet() {
+        runBlocking {
+            app.settings.update { it.copy(backupFolderUri = "folder", lastBackupDay = app.fakeClock.today(), lastCopySentDay = app.fakeClock.today() - 29, trainerPhone = "+919000000099") }
+            // Overdue, because that's the tab Home opens on.
+            app.members.addMember(MemberDraft("Rahul Sharma", "9876543210", 1, app.fakeClock.today() - 5))
+        }
+        compose.setContent { MbTheme { AppNavigation() } }
+        waitForText("Rahul Sharma")
+        assertTrue(gone("Keep a copy of your data off this phone"))
+    }
+
+    /** Reminders that quote the owner's number wait until it's set (docs/DECISIONS.md). */
+    @Test
+    fun homeAsksForTheOwnersNumberWhenRemindersAreWaitingForIt() {
+        runBlocking {
+            app.settings.update { it.copy(backupFolderUri = "folder", lastBackupDay = app.fakeClock.today()) }
+            app.members.addMember(MemberDraft("Rahul Sharma", "9876543210", 1, app.fakeClock.today()))
+        }
+        compose.setContent { MbTheme { AppNavigation() } }
+        waitForText("Add your phone number")
+        tap("Add")
+        waitForText("Plans and prices")
+    }
+
+    /** With the phone's date this wrong, every date in the app would be too. */
+    @Test
+    fun homeSaysWhenThePhonesDateIsWrong() {
+        app.fakeClock.day = com.swastik.mbfitness.domain.Dates.of(2020, 1, 1)
+        compose.setContent { MbTheme { AppNavigation() } }
+        waitForText("Your phone's date is wrong (1 Jan 2020)")
+        app.fakeClock.day = com.swastik.mbfitness.domain.Dates.of(2027, 1, 1)
     }
 
     // ---- Old records ----

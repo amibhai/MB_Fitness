@@ -28,6 +28,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.swastik.mbfitness.App
 import com.swastik.mbfitness.data.SafBackupFolder
+import com.swastik.mbfitness.data.SendCopy
+import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.BackupRules
 import com.swastik.mbfitness.domain.CsvExport
 import com.swastik.mbfitness.ui.appViewModel
@@ -47,6 +49,7 @@ import com.swastik.mbfitness.ui.components.SectionLabel
 import com.swastik.mbfitness.ui.components.launchOr
 import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
+import com.swastik.mbfitness.work.DeviceIntents
 
 private enum class PasswordDialog { SET, REMOVE }
 
@@ -124,7 +127,49 @@ fun BackupScreen(onBack: () -> Unit, onRestored: () -> Unit = {}, damaged: Boole
                 Modifier.fillMaxWidth(),
             )
 
+            SectionLabel("Copy off this phone")
+            MbCard(Modifier.fillMaxWidth()) {
+                Text(
+                    state.lastCopySentDay?.let { "Last sent ${Dates.formatShort(it)}" } ?: "None sent yet",
+                    style = MbType.BodyLarge,
+                    color = colors.textPrimary,
+                )
+                Text(
+                    "Backups above stay on this phone. If it's lost or broken, a copy sent to your Google Drive or WhatsApp brings everything back. Send one every month.",
+                    Modifier.padding(top = 4.dp),
+                    style = MbType.Caption,
+                    color = colors.textSecondary,
+                )
+                if (!state.passwordSet) {
+                    Text(
+                        "With no backup password, anyone who gets the file can read it, except full Aadhaar numbers.",
+                        Modifier.padding(top = 4.dp),
+                        style = MbType.Caption,
+                        color = colors.textSecondary,
+                    )
+                }
+            }
+            SecondaryButton(
+                "Send a copy",
+                {
+                    viewModel.sendCopy(
+                        onReady = { file ->
+                            if (!DeviceIntents.open(context, SendCopy.chooser(context, file))) snackbar.show("No app on this phone can take the file")
+                        },
+                        onProblem = { snackbar.show(it) },
+                    )
+                },
+                Modifier.fillMaxWidth(),
+                enabled = !state.busy,
+            )
+
             SectionLabel("Restore")
+            // The app's own copy is made daily and folder backups weekly, so it's often the newer.
+            val folderDay = state.latestName?.let(BackupRules::dayOf)
+            state.ownCopyDay?.takeIf { folderDay == null || it > folderDay }?.let { day ->
+                val which = if (state.latestName == null) "own" else "newer"
+                SecondaryButton("Restore the app's $which copy (${Dates.formatShort(day)})", viewModel::restoreOwnCopy, Modifier.fillMaxWidth(), enabled = !state.busy)
+            }
             if (state.latestName != null) {
                 SecondaryButton("Restore latest backup", viewModel::restoreLatest, Modifier.fillMaxWidth(), enabled = !state.busy)
             }

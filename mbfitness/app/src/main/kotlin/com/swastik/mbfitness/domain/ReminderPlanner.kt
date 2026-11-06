@@ -53,7 +53,12 @@ data class PlannedMessage(
 /** A reminder that can't go yet because a setting it needs is blank. Sends once it's set. */
 data class HeldReminder(val memberId: Long, val kind: MessageKind, val missing: Set<String>)
 
-data class PlanResult(val messages: List<PlannedMessage>, val held: List<HeldReminder>)
+/** [skipped] holds members whose data couldn't be planned for, so the rest still get theirs. */
+data class PlanResult(
+    val messages: List<PlannedMessage>,
+    val held: List<HeldReminder>,
+    val skipped: List<Long> = emptyList(),
+)
 
 object DedupeKeys {
     fun expiry(memberId: Long, kind: MessageKind, expiry: Long, n: Int? = null): String =
@@ -88,33 +93,50 @@ object ReminderPlanner {
         val quietToday = !input.ignoreQuietDay && input.quiet.isQuiet(input.today)
         val messages = mutableListOf<PlannedMessage>()
         val held = mutableListOf<HeldReminder>()
+        val skipped = mutableListOf<Long>()
 
         for (member in input.members.sortedBy { it.id }) {
-            val eligible = member.state == MemberState.ACTIVE && member.smsConsent && member.remindersEnabled
-            if (!eligible || input.history.lastReminderDay[member.id] == input.today) continue
-
-            // In priority order. Only birthdays are allowed on a quiet day (SPEC 8.3).
-            val candidates = buildList {
-                if (!quietToday) {
-                    expiryCandidate(member, input, templates)?.let { add(it) }
-                    balanceCandidate(member, input, templates)?.let { add(it) }
-                }
-                birthdayCandidate(member, input, templates)?.let { add(it) }
-            }
-
-            for (candidate in candidates) {
-                val template = templates.getValue(candidate.kind)
-                val rendered = TemplateEngine.render(template.body, valuesFor(member, input), input.settings.language)
-                if (rendered.missing.isEmpty()) {
-                    messages += PlannedMessage(
-                        member.id, member.phone, candidate.kind, rendered.text, candidate.forExpiry, candidate.key,
-                    )
-                    break
-                }
-                held += HeldReminder(member.id, candidate.kind, rendered.missing)
+            // One member's bad data, such as an impossible date, can't stop everyone else's.
+            try {
+                planFor(member, input, templates, quietToday, messages, held)
+            } catch (_: RuntimeException) {
+                skipped += member.id
             }
         }
-        return PlanResult(messages, held)
+        return PlanResult(messages, held, skipped)
+    }
+
+    private fun planFor(
+        member: PlannerMember,
+        input: PlannerInput,
+        templates: Map<MessageKind, TemplateConfig>,
+        quietToday: Boolean,
+        messages: MutableList<PlannedMessage>,
+        held: MutableList<HeldReminder>,
+    ) {
+        val eligible = member.state == MemberState.ACTIVE && member.smsConsent && member.remindersEnabled
+        if (!eligible || input.history.lastReminderDay[member.id] == input.today) return
+
+        // In priority order. Only birthdays are allowed on a quiet day (SPEC 8.3).
+        val candidates = buildList {
+            if (!quietToday) {
+                expiryCandidate(member, input, templates)?.let { add(it) }
+                balanceCandidate(member, input, templates)?.let { add(it) }
+            }
+            birthdayCandidate(member, input, templates)?.let { add(it) }
+        }
+
+        for (candidate in candidates) {
+            val template = templates.getValue(candidate.kind)
+            val rendered = TemplateEngine.render(template.body, valuesFor(member, input), input.settings.language)
+            if (rendered.missing.isEmpty()) {
+                messages += PlannedMessage(
+                    member.id, member.phone, candidate.kind, rendered.text, candidate.forExpiry, candidate.key,
+                )
+                return
+            }
+            held += HeldReminder(member.id, candidate.kind, rendered.missing)
+        }
     }
 
     /** What the next normal day would send, for "6 will go tomorrow" (SPEC 8.3). */
@@ -160,6 +182,9 @@ object ReminderPlanner {
         templates: Map<MessageKind, TemplateConfig>,
     ): Candidate? {
         val today = input.today
+        // Someone whose advance covers the whole fee has nothing to pay, and "your fee of Rs 0 is
+        // overdue" would only confuse them. They still show on Home for bhaiya to renew.
+        if (member.renewalFee + member.balance <= 0) return null
         val latest = expiryPoints(member, templates).lastOrNull { it.day <= today } ?: return null
         val used = input.history.usedKeys
         if (today - latest.day > MAX_CATCH_UP_AGE_DAYS || latest.key in used) return null

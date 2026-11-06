@@ -123,7 +123,6 @@ class ReminderPlannerTest {
     fun theAmountIncludesAnyBalanceAndAdvances() {
         assertTrue("Rs 1900" in plan(expiry, member(balance = 700)).single().body)
         assertTrue("Rs 1000" in plan(expiry, member(balance = -200)).single().body)
-        assertTrue("Rs 0" in plan(expiry, member(balance = -2000)).single().body)
     }
 
     @Test
@@ -346,5 +345,22 @@ class ReminderPlannerTest {
         assertEquals("m1:BALANCE_DUE:p7:n2", DedupeKeys.balance(1, 7, 2))
         assertEquals("m1:BIRTHDAY:y2027", DedupeKeys.birthday(1, 2027))
         assertEquals("m1:PAYMENT_THANKS:p7", DedupeKeys.thanks(1, 7))
+    }
+
+    /** "Your fee of Rs 0 is overdue" would only confuse someone who paid ahead (docs/DECISIONS.md). */
+    @Test
+    fun someoneWhoseAdvanceCoversTheFeeGetsNoFeeReminder() {
+        assertTrue(plan(expiry, member(balance = -1200)).isEmpty())
+        assertTrue(plan(expiry + 3, member(balance = -1500)).isEmpty())
+        val partly = plan(expiry, member(balance = -200)).single()
+        assertTrue(partly.body, "Rs 1000" in partly.body)
+    }
+
+    /** One member's bad data can't stop everyone else's reminders (docs/DECISIONS.md). */
+    @Test
+    fun oneBadRecordDoesntStopTheOthers() {
+        val result = ReminderPlanner.plan(input(expiry, member(id = 1, expiry = Long.MAX_VALUE - 5), member(id = 2)))
+        assertEquals(listOf(1L), result.skipped)
+        assertEquals(listOf(2L), result.messages.map { it.memberId })
     }
 }

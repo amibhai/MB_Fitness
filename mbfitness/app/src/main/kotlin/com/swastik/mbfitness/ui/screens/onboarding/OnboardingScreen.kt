@@ -194,6 +194,9 @@ private fun ColumnScope.WelcomeStep(state: OnboardingUiState, viewModel: Onboard
     GymLogo(state.settings.logoFile, state.settings.gymName, Modifier.align(Alignment.CenterHorizontally), size = 96.dp)
     Text(state.settings.greeting, Modifier.align(Alignment.CenterHorizontally), style = MbType.SectionLabel, color = colors.accent)
     StepTitle("Welcome", "A few steps to get reminders working. You can skip any of them and come back later from Settings.")
+    if (state.settings.settingsReset) {
+        MbBanner("The app's settings were damaged, so setup runs again. Your members and payments are safe.", BannerTone.WARNING)
+    }
     PrimaryButton("Start", viewModel::next, Modifier.fillMaxWidth())
     SecondaryButton("Restore from a backup", onRestore, Modifier.fillMaxWidth())
 }

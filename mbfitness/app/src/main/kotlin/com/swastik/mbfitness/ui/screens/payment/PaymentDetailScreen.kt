@@ -1,5 +1,6 @@
 package com.swastik.mbfitness.ui.screens.payment
 
+import com.swastik.mbfitness.launchSafely
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,7 @@ import com.swastik.mbfitness.data.MemberRepository
 import com.swastik.mbfitness.data.PaymentEdit
 import com.swastik.mbfitness.data.PaymentEntity
 import com.swastik.mbfitness.data.PaymentVersion
+import com.swastik.mbfitness.data.paymentHistory
 import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.Money
 import com.swastik.mbfitness.domain.PaymentKind
@@ -57,7 +59,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 
 data class PaymentForm(
     val charged: String,
@@ -87,7 +88,7 @@ class PaymentDetailViewModel(
         combine(members.observePayment(paymentId), form, deleteEffect) { payment, editing, effect ->
             PaymentDetailUiState(
                 payment = payment,
-                history = payment?.let { Json.decodeFromString<List<PaymentVersion>>(it.editHistory) }.orEmpty(),
+                history = payment?.let { paymentHistory(it.editHistory) }.orEmpty(),
                 form = editing,
                 deleteEffect = effect,
             )
@@ -230,7 +231,7 @@ fun PaymentDetailScreen(paymentId: Long, onBack: () -> Unit) {
                 viewModel.delete {
                     snackbar.show(
                         "Payment deleted",
-                        listOf(SnackAction("Undo") { appScope.launch { repository.restorePayment(paymentId) } }),
+                        listOf(SnackAction("Undo") { appScope.launchSafely(context) { repository.restorePayment(paymentId) } }),
                     )
                     onBack()
                 }

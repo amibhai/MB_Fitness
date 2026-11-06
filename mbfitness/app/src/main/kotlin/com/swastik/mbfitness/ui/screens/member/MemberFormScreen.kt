@@ -1,5 +1,6 @@
 package com.swastik.mbfitness.ui.screens.member
 
+import com.swastik.mbfitness.launchSafely
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -65,7 +66,7 @@ fun MemberFormScreen(
     val colors = MbTheme.colors
     val pickContact = rememberLauncherForActivityResult(PickPhoneContact()) { uri ->
         if (uri != null) {
-            scope.launch { readPickedContact(context, uri)?.let(viewModel::onContactPicked) }
+            scope.launchSafely(context) { readPickedContact(context, uri)?.let(viewModel::onContactPicked) }
         }
     }
 

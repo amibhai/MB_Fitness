@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Send a copy" (SendCopy.kt): only this folder, which holds one backup file at a time. -->
+<paths>
+    <files-path name="shared" path="shared/" />
+</paths>

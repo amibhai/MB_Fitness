@@ -256,6 +256,10 @@ interface CounterDao {
     @Query("SELECT value FROM counters WHERE name = :name")
     suspend fun value(name: String): Long?
 
+    /** Deleted payments count too: their numbers are never reused. */
+    @Query("SELECT MAX(receiptNo) FROM payments")
+    suspend fun highestReceipt(): Long?
+
     @Upsert
     suspend fun set(counter: CounterEntity)
 }

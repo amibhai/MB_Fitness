@@ -52,7 +52,8 @@ class OutboxEngineTest {
         body: String = "Hello",
         parts: Int = 1,
         phone: String = "+919876543210",
-        notBefore: Long = 0,
+        // The start of today, so a reminder here counts as planned today (Pacing.isStale).
+        notBefore: Long = com.swastik.mbfitness.domain.Dates.millisAt(env.clock.today(), 0),
         createdAt: Long = 0,
         memberId: Long? = null,
     ): Long = db.messages().insert(
@@ -326,7 +327,7 @@ class OutboxEngineTest {
         repeat(25) { queue() }
         engine.run()
         assertEquals(25, sender.accepted.size)
-        queue(body = "later")
+        queue(body = "later", notBefore = 0)
         env.clock.day -= 1
         engine.run()
         assertEquals(26, sender.accepted.size)
@@ -463,5 +464,26 @@ class OutboxEngineTest {
         engine.run()
         assertTrue(sender.accepted.single().body, "Received Rs 1200" in sender.accepted.single().body)
         assertFalse(sender.accepted.single().body.startsWith("[TEST"))
+    }
+
+    /** "Due today" written last night is false this morning, so it waits to be written again. */
+    @Test
+    fun aReminderWordedForYesterdayDoesntGo() = runTest {
+        val id = queue(kind = MessageKind.ON_DUE, body = "due today", notBefore = com.swastik.mbfitness.domain.Dates.millisAt(env.clock.today() - 1, 22))
+        assertNotNull(engine.run())
+        assertTrue(sender.accepted.isEmpty())
+        assertEquals(MessageStatus.QUEUED, message(id).status)
+    }
+
+    /** A clock that jumped ahead and came back can't leave messages waiting for years. */
+    @Test
+    fun messagesWaitingForAFarOffDayAreSortedOut() = runTest {
+        val farOff = env.clock.nowMillis() + 3000L * 24 * 60 * 60 * 1000
+        val mine = queue(kind = MessageKind.MANUAL, body = "mine", notBefore = farOff)
+        val reminder = queue(kind = MessageKind.OVERDUE_1, body = "reminder", notBefore = farOff)
+        assertNull(engine.run())
+        assertEquals("mine", sender.accepted.single().body)
+        assertEquals(MessageStatus.SENDING, message(mine).status)
+        assertEquals("the planner writes it again", MessageStatus.CANCELLED, message(reminder).status)
     }
 }

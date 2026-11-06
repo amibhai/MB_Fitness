@@ -32,6 +32,7 @@ import com.swastik.mbfitness.data.ErrorLogger
 import com.swastik.mbfitness.data.MemberRepository
 import com.swastik.mbfitness.data.MessageRepository
 import com.swastik.mbfitness.data.SettingsStore
+import com.swastik.mbfitness.domain.ClockCheck
 import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.MemberRules
 import com.swastik.mbfitness.domain.MemberTab
@@ -92,6 +93,7 @@ enum class ProblemKind(val id: Int, val title: String, val detail: String) {
     REMINDERS_STOPPED(103, "Reminders haven't run for 2 days", "Tap to check what's wrong."),
     BACKUP_OVERDUE(104, "Backup didn't work", "This week's backup couldn't be made. Tap to fix."),
     SIM_MISSING(105, "Your chosen SIM isn't there", "Reminders are using the phone's default SIM. Tap to check."),
+    SIM_NOT_CHOSEN(106, "Choose a SIM for reminders", "Your phone asks which SIM to use each time, so reminders can't go by themselves. Tap to fix."),
 }
 
 data class DailyRunResult(val plan: PlanResult?, val summary: SummaryText?)
@@ -110,11 +112,14 @@ class DailyRunner(
     private val errors: ErrorLogger,
     /** False means a backup was due and couldn't be made. */
     private val weeklyBackup: suspend () -> Boolean = { true },
-    private val chosenSimMissing: suspend () -> Boolean = { false },
+    /** A SIM problem worth a notice, if there is one. */
+    private val simProblem: suspend () -> ProblemKind? = { null },
     private val refreshWidget: suspend () -> Unit = {},
 ) {
     suspend fun runIfDue(): Boolean {
         val current = settings.current()
+        // With the clock this wrong, every date would be too. It runs once the clock is right.
+        if (ClockCheck.looksWrong(clock.today())) return false
         if (!ReminderSchedule.isRunDue(clock.nowMillis(), current.lastDailyRunDay, current.reminderHour, current.reminderMinute)) {
             return false
         }
@@ -130,9 +135,10 @@ class DailyRunner(
     suspend fun run(ignoreQuietDay: Boolean = false): DailyRunResult {
         step("housekeeping") { members.housekeeping() }
         val plan = step("planning") { messages.planAndQueue(ignoreQuietDay) }
+        plan?.skipped?.takeIf { it.isNotEmpty() }?.let { report("planning skipped members $it: their data looks wrong") }
         step("outbox") { kicker.kick() }
         step("backup") { if (!weeklyBackup()) notices.problem(ProblemKind.BACKUP_OVERDUE) }
-        step("sim") { if (chosenSimMissing()) notices.problem(ProblemKind.SIM_MISSING) }
+        step("sim") { simProblem()?.let(notices::problem) }
         step("widget") { refreshWidget() }
         val summary = plan?.let { step("summary") { postSummary(it, ignoreQuietDay) } }
         if (plan != null) {
@@ -209,11 +215,17 @@ class SystemNotices(private val context: Context) : Notices {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    private fun openApp(openMessages: Boolean): PendingIntent {
+    private fun openApp(openMessages: Boolean, openHealth: Boolean = false): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(MainActivity.EXTRA_OPEN_MESSAGES, openMessages)
-        return PendingIntent.getActivity(context, if (openMessages) 1 else 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            .putExtra(MainActivity.EXTRA_OPEN_HEALTH, openHealth)
+        val code = when {
+            openHealth -> 2
+            openMessages -> 1
+            else -> 0
+        }
+        return PendingIntent.getActivity(context, code, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
     @SuppressLint("MissingPermission") // allowed() checks it.
@@ -245,7 +257,7 @@ class SystemNotices(private val context: Context) : Notices {
                 .setContentTitle(kind.title)
                 .setContentText(kind.detail)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setContentIntent(openApp(openMessages = false))
+                .setContentIntent(openApp(openMessages = false, openHealth = true))
                 .setAutoCancel(true)
                 .build(),
         )
@@ -288,10 +300,14 @@ object ReminderScheduling {
         val pending = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarms.canScheduleExactAlarms()
         if (exactAllowed) {
-            alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
-        } else {
-            alarms.setWindow(AlarmManager.RTC_WAKEUP, at, WINDOW_MILLIS, pending)
+            try {
+                alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+                return
+            } catch (_: SecurityException) {
+                // The permission was taken away between the check and the call. The window still works.
+            }
         }
+        alarms.setWindow(AlarmManager.RTC_WAKEUP, at, WINDOW_MILLIS, pending)
     }
 
     fun ensureWatchdog(context: Context) {
@@ -326,17 +342,23 @@ class DailyRunWorker(context: Context, params: WorkerParameters) : CoroutineWork
         (applicationContext as App).notifier.sendingForegroundInfo()
 }
 
-/** The safety net: catches a run the alarm missed, and says if reminders have stopped (SPEC 9). */
+/**
+ * The safety net: catches a run the alarm missed, and says if reminders have stopped (SPEC 9).
+ * Each step runs on its own, so a failing one can't stop the rest. The check comes after the
+ * catch-up, so it only speaks up if reminders still aren't running.
+ */
 class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val app = applicationContext as App
-        val lastRunBefore = app.settings.current().lastDailyRunDay
-        ReminderScheduling.ensureAll(app)
-        app.dailyRunner.runIfDue()
-        if (ReminderSchedule.hasStopped(app.clock.nowMillis(), lastRunBefore)) {
-            app.notifier.problem(ProblemKind.REMINDERS_STOPPED)
+        app.attempt("Watchdog: alarms") { ReminderScheduling.ensureAll(app) }
+        app.attempt("Watchdog: daily run") { app.dailyRunner.runIfDue() }
+        app.attempt("Watchdog: check") {
+            val current = app.settings.current()
+            if (ReminderSchedule.hasStopped(app.clock.nowMillis(), current.lastDailyRunDay, current.setupDoneAt)) {
+                app.notifier.problem(ProblemKind.REMINDERS_STOPPED)
+            }
         }
-        app.outboxKicker.kick()
+        app.attempt("Watchdog: outbox") { app.outboxKicker.kick() }
         return Result.success()
     }
 }
@@ -349,7 +371,7 @@ class DailyAlarmReceiver : BroadcastReceiver() {
         val pending = goAsync()
         app.backgroundScope.launch {
             try {
-                ReminderScheduling.ensureAll(app)
+                app.attempt("Alarm: next alarm") { ReminderScheduling.ensureAll(app) }
             } finally {
                 pending.finish()
             }
@@ -369,8 +391,10 @@ class BootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         app.backgroundScope.launch {
             try {
-                ReminderScheduling.ensureAll(app)
-                app.outboxKicker.kick()
+                app.attempt("Restart: alarms") { ReminderScheduling.ensureAll(app) }
+                // A run missed while the phone was off happens now, not at the next watchdog.
+                app.attempt("Restart: daily run") { ReminderScheduling.startDailyRun(app) }
+                app.attempt("Restart: outbox") { app.outboxKicker.kick() }
             } finally {
                 pending.finish()
             }

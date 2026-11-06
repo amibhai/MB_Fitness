@@ -52,7 +52,7 @@ class LockViewModel(
                     recoveryAvailable = current.recoveryCodeHash != null,
                 )
             }
-            current.pinLockedUntil?.let(::startCountdown)
+            PinRules.activeLockout(current.pinLockedUntil, clock.nowMillis())?.let(::startCountdown)
         }
     }
 
@@ -92,14 +92,14 @@ class LockViewModel(
     }
 
     fun onRecoveryCode(code: String) {
-        viewModelScope.launch {
-            state.update { it.copy(busy = true, message = null) }
+        whileBusy {
+            state.update { it.copy(message = null) }
             val correct = appLock.checkRecoveryCode(code)
             state.update {
                 if (correct) {
-                    it.copy(busy = false, stage = LockStage.NEW_PIN, entered = "", message = "Choose a new PIN")
+                    it.copy(stage = LockStage.NEW_PIN, entered = "", message = "Choose a new PIN")
                 } else {
-                    it.copy(busy = false, message = "That code doesn't match. Check it and try again.")
+                    it.copy(message = "That code doesn't match. Check it and try again.")
                 }
             }
         }
@@ -116,21 +116,32 @@ class LockViewModel(
     }
 
     private fun checkPin(pin: String) {
-        viewModelScope.launch {
-            state.update { it.copy(busy = true) }
+        whileBusy {
             when (val result = appLock.checkPin(pin)) {
                 PinCheck.Correct, PinCheck.NoPinSet -> {
                     appLock.markUnlocked()
-                    state.update { it.copy(busy = false, entered = "", pinConfirmed = true) }
+                    state.update { it.copy(entered = "", pinConfirmed = true) }
                 }
                 is PinCheck.Wrong -> {
-                    state.update { it.copy(busy = false, entered = "", message = "Wrong PIN. Try again.") }
+                    state.update { it.copy(entered = "", message = "Wrong PIN. Try again.") }
                     result.lockedUntil?.let(::startCountdown)
                 }
                 is PinCheck.LockedOut -> {
-                    state.update { it.copy(busy = false, entered = "") }
+                    state.update { it.copy(entered = "") }
                     startCountdown(result.until)
                 }
+            }
+        }
+    }
+
+    /** Whatever happens inside, the pad comes back. A frozen lock screen is a way to lose the app. */
+    private fun whileBusy(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            state.update { it.copy(busy = true) }
+            try {
+                block()
+            } finally {
+                state.update { it.copy(busy = false, entered = if (it.stage == LockStage.RECOVERY) it.entered else "") }
             }
         }
     }
@@ -140,11 +151,10 @@ class LockViewModel(
             state.update { it.copy(stage = LockStage.NEW_PIN, entered = "", message = "Those didn't match. Choose a new PIN.") }
             return
         }
-        viewModelScope.launch {
-            state.update { it.copy(busy = true) }
+        whileBusy {
             appLock.setPin(pin, newRecoveryCode = false)
             appLock.markUnlocked()
-            state.update { it.copy(busy = false, entered = "", pinLength = pin.length) }
+            state.update { it.copy(pinLength = pin.length) }
         }
     }
 

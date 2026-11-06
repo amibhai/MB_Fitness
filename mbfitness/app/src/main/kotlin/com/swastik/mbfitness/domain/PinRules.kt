@@ -33,6 +33,15 @@ object PinRules {
 
     private const val MAX_DOUBLINGS = 10
 
+    /**
+     * The wait still to sit out, if any. One further away than the longest possible wait means
+     * the clock moved after it was set, and that can't lock bhaiya out for years.
+     */
+    fun activeLockout(lockedUntil: Long?, nowMillis: Long): Long? =
+        lockedUntil?.takeIf { it > nowMillis && it - nowMillis <= MAX_WAIT_SECONDS * MILLIS_PER_SECOND }
+
+    private const val MILLIS_PER_SECOND = 1000L
+
     /** "ABCD-EFGH-JKMN": shown once, for the owner to write down (SPEC 11.1). */
     fun newRecoveryCode(random: SecureRandom = SecureRandom()): String {
         val raw = String(CharArray(RECOVERY_LENGTH) { RECOVERY_ALPHABET[random.nextInt(RECOVERY_ALPHABET.length)] })

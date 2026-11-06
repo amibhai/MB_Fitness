@@ -75,12 +75,22 @@ class SimSmsSender(private val context: Context) : SmsSender {
         const val EXTRA_ATTEMPT = "attempt"
         const val EXTRA_PART_COUNT = "partCount"
 
-        /** A plain-language reason for the Messages screen. */
-        fun describeResult(code: Int): String = when (code) {
+        /** Two SIMs, none chosen, and the phone asks which to use each time. */
+        const val NO_SIM_CHOSEN = "Your phone asks which SIM to use for each SMS. Choose one in Settings, under SIM."
+
+        /**
+         * A plain-language reason for the Messages screen, saying what bhaiya can do about it. A
+         * phone with two SIMs that asks which to use each time reports only "failed", which would
+         * read as the network's fault, so [phoneAsksWhichSim] gives the real reason instead.
+         */
+        fun describeResult(code: Int, phoneAsksWhichSim: Boolean = false): String = when (code) {
+            SmsManager.RESULT_ERROR_GENERIC_FAILURE if phoneAsksWhichSim -> NO_SIM_CHOSEN
             SmsManager.RESULT_ERROR_NO_SERVICE -> "No signal"
             SmsManager.RESULT_ERROR_RADIO_OFF -> "Airplane mode is on or the radio is off"
             SmsManager.RESULT_ERROR_NULL_PDU -> "The phone couldn't prepare this SMS"
-            SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "The network refused this SMS"
+            SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "The network refused this SMS. Check the SIM has an SMS pack or balance."
+            SmsManager.RESULT_ERROR_LIMIT_EXCEEDED -> "Android's limit on SMS was reached"
+            SmsManager.RESULT_ERROR_FDN_CHECK_FAILURE -> "The SIM's fixed dialling list blocked this number"
             else -> "Could not send (code $code)"
         }
     }

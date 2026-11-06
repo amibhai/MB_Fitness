@@ -12,6 +12,7 @@ class FakeDeviceChecks(context: Context) : DeviceChecks(context) {
     var hibernation: Boolean? = true
     var sim = true
     var chosenSimGone = false
+    var asksWhichSim = false
     var outsideStore = true
     var exitReason: String? = null
     var sims = emptyList<SimChoice>()
@@ -27,6 +28,7 @@ class FakeDeviceChecks(context: Context) : DeviceChecks(context) {
     override fun canListSims() = canList
     override fun activeSims() = sims
     override fun chosenSimMissing(chosen: Int?) = chosenSimGone
+    override fun phoneAsksWhichSim() = asksWhichSim
     override fun installedOutsideStore() = outsideStore
     override fun lastExitReason() = exitReason
     override fun databaseBytes() = 2_097_152L

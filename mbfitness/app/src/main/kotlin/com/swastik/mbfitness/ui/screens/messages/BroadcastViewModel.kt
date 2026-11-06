@@ -100,7 +100,13 @@ class BroadcastViewModel(
         sent = true
         viewModelScope.launch {
             val plan = uiState.value.plan
-            messages.queueBroadcast(TemplateEngine.straightenQuotes(body.value), audience.value.name, recipients)
+            try {
+                messages.queueBroadcast(TemplateEngine.straightenQuotes(body.value), audience.value.name, recipients)
+            } catch (error: Exception) {
+                // Nothing was queued, so sending again has to stay possible.
+                sent = false
+                throw error
+            }
             kicker.kick()
             onDone(plan ?: "Broadcast queued")
         }

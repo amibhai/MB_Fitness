@@ -26,6 +26,14 @@ object SystemTodayProvider : TodayProvider {
     override fun nowMillis(): Long = System.currentTimeMillis()
 }
 
+/** Spots a phone whose clock is plainly wrong, such as after its battery ran flat. */
+object ClockCheck {
+    /** The day this app was first released. A phone showing an earlier date can't be right. */
+    private val FIRST_RELEASED = Dates.of(2026, 11, 6)
+
+    fun looksWrong(today: Long): Boolean = today < FIRST_RELEASED
+}
+
 object Dates {
     private val SHORT = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)
     private val FULL = DateTimeFormatter.ofPattern("d MMM uuuu", Locale.ENGLISH)

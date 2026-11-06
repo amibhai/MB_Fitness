@@ -75,6 +75,16 @@ fun MbTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () 
             onSurfaceVariant = colors.textSecondary,
             outline = colors.border,
             error = colors.danger,
+            // Without these, the clock and date pickers keep Material's default lavender and pink.
+            primaryContainer = colors.avatarBackground,
+            onPrimaryContainer = colors.avatarText,
+            tertiaryContainer = colors.avatarBackground,
+            onTertiaryContainer = colors.avatarText,
+            surfaceContainerLowest = colors.surface,
+            surfaceContainerLow = colors.surface,
+            surfaceContainer = colors.surface,
+            surfaceContainerHigh = colors.surface,
+            surfaceContainerHighest = colors.inactive.background,
         )
     } else {
         lightColorScheme(
@@ -87,6 +97,16 @@ fun MbTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () 
             onSurfaceVariant = colors.textSecondary,
             outline = colors.border,
             error = colors.danger,
+            // Without these, the clock and date pickers keep Material's default lavender and pink.
+            primaryContainer = colors.avatarBackground,
+            onPrimaryContainer = colors.avatarText,
+            tertiaryContainer = colors.avatarBackground,
+            onTertiaryContainer = colors.avatarText,
+            surfaceContainerLowest = colors.surface,
+            surfaceContainerLow = colors.surface,
+            surfaceContainer = colors.surface,
+            surfaceContainerHigh = colors.surface,
+            surfaceContainerHighest = colors.inactive.background,
         )
     }
     CompositionLocalProvider(LocalMbColors provides colors) {

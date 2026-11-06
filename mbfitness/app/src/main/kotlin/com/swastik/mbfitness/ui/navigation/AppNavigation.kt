@@ -1,5 +1,6 @@
 package com.swastik.mbfitness.ui.navigation
 
+import com.swastik.mbfitness.launchSafely
 import androidx.activity.compose.LocalActivity
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.WindowInsets
@@ -75,7 +76,6 @@ import com.swastik.mbfitness.ui.screens.today.TodayClosingScreen
 import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
 import kotlin.reflect.KClass
-import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -189,7 +189,7 @@ fun AppNavigation(openImport: Boolean = false, onImportOpened: () -> Unit = {}) 
             }
             add(
                 SnackAction("Undo") {
-                    scope.launch {
+                    scope.launchSafely(app) {
                         app.members.undoPayment(saved)
                         snackbar.show("Payment undone")
                     }
@@ -225,6 +225,7 @@ fun AppNavigation(openImport: Boolean = false, onImportOpened: () -> Unit = {}) 
                         onAddMember = { go(AddMemberRoute) },
                         onSmsSelected = { ids -> go(BroadcastRoute(ids.joinToString(","))) },
                         onBackup = { go(BackupRoute) },
+                        onSettings = { go(SettingsRoute) },
                     )
                 }
                 composable<TodayRoute> { TodayClosingScreen() }
@@ -257,7 +258,8 @@ fun AppNavigation(openImport: Boolean = false, onImportOpened: () -> Unit = {}) 
                         onSetPin = { go(SetPinRoute) },
                         onBackup = { go(BackupRoute) },
                         onMessages = { go(MessagesRoute) },
-                        onSettings = { navController.popBackStack() },
+                        // Back to Settings if it was opened from there. A notice can open it from anywhere.
+                        onSettings = { if (!navController.popBackStack(SettingsRoute, inclusive = false)) go(SettingsRoute) },
                         onErrorLog = { go(ErrorLogRoute) },
                     )
                 }
@@ -332,7 +334,7 @@ fun AppNavigation(openImport: Boolean = false, onImportOpened: () -> Unit = {}) 
                         memberId = entry.toRoute<RecordPaymentRoute>().memberId,
                         onBack = { navController.popBackStack() },
                         onSaved = { saved ->
-                            scope.launch {
+                            scope.launchSafely(app) {
                                 val name = app.members.member(saved.memberId)?.name.orEmpty()
                                 navController.popBackStack()
                                 showPaymentSaved(saved, name)
@@ -370,6 +372,15 @@ fun AppNavigation(openImport: Boolean = false, onImportOpened: () -> Unit = {}) 
                     popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                     launchSingleTop = true
                 }
+            }
+        }
+
+        val openHealth = (LocalActivity.current as? MainActivity)?.openHealthRequest
+        if (openHealth?.value == true) {
+            LaunchedEffect(Unit) {
+                openHealth.value = false
+                snackbar.dismiss()
+                navController.navigate(HealthCheckRoute) { launchSingleTop = true }
             }
         }
 

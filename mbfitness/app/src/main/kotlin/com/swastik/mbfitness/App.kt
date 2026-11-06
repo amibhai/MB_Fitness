@@ -4,8 +4,13 @@ import android.Manifest
 import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -15,6 +20,7 @@ import com.swastik.mbfitness.data.AppDatabase
 import com.swastik.mbfitness.data.AppLock
 import com.swastik.mbfitness.data.BackupFolder
 import com.swastik.mbfitness.data.BackupManager
+import com.swastik.mbfitness.data.CrashReports
 import com.swastik.mbfitness.data.ErrorLogger
 import com.swastik.mbfitness.data.KeystoreAadhaarVault
 import com.swastik.mbfitness.data.LogoStore
@@ -22,6 +28,9 @@ import com.swastik.mbfitness.data.MemberRepository
 import com.swastik.mbfitness.data.MessageRepository
 import com.swastik.mbfitness.data.SafBackupFolder
 import com.swastik.mbfitness.data.SettingsStore
+import com.swastik.mbfitness.domain.CrashLoop
+import com.swastik.mbfitness.domain.Dates
+import com.swastik.mbfitness.domain.LogText
 import com.swastik.mbfitness.domain.SystemTodayProvider
 import com.swastik.mbfitness.domain.TodayProvider
 import com.swastik.mbfitness.sms.BlockReason
@@ -39,6 +48,7 @@ import com.swastik.mbfitness.work.ReminderScheduling
 import com.swastik.mbfitness.work.SystemNotices
 import com.swastik.mbfitness.work.WorkManagerKicker
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,8 +56,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
-/** Lives at files/datastore/settings.preferences_pb, which the backup rules include. */
-private val Context.settingsDataStore by preferencesDataStore(name = "settings")
+/**
+ * Lives at files/datastore/settings.preferences_pb, which the backup rules include. A damaged
+ * file would stop the app opening at all, so it starts again from the defaults instead and setup
+ * runs again. Members and payments are in the database, untouched.
+ */
+private val Context.settingsDataStore by preferencesDataStore(
+    name = "settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { SettingsStore.afterDamage() },
+)
 
 /**
  * Manual DI container (SPEC 5.3). Everything added here must stay lazy: this class also runs
@@ -57,15 +74,13 @@ private val Context.settingsDataStore by preferencesDataStore(name = "settings")
 open class App : Application() {
     override fun onCreate() {
         super.onCreate()
-        StorageFullGuard.install(this)
+        FailureGuard.install(this)
     }
 
     open val clock: TodayProvider = SystemTodayProvider
     val backgroundScope: CoroutineScope by lazy {
         // Background work must never take the app down: anything that escapes goes to the log.
-        val onFailure = CoroutineExceptionHandler { _, error ->
-            backgroundScope.launch { runCatching { errors.log("Background", "${error.javaClass.simpleName}: ${error.message}") } }
-        }
+        val onFailure = CoroutineExceptionHandler { _, error -> recordFailure("Background", error) }
         CoroutineScope(SupervisorJob() + Dispatchers.IO + onFailure)
     }
 
@@ -73,6 +88,7 @@ open class App : Application() {
     val settings: SettingsStore by lazy { createSettings() }
     val aadhaarVault: AadhaarVault by lazy { createVault() }
     val errors: ErrorLogger by lazy { ErrorLogger(database, clock) }
+    private val crashReports by lazy { CrashReports(filesDir) }
     val outboxKicker: OutboxKicker by lazy { createKicker() }
     val members: MemberRepository by lazy {
         MemberRepository(
@@ -107,7 +123,18 @@ open class App : Application() {
         )
     }
     val backups: BackupManager by lazy {
-        BackupManager(database, settings, aadhaarVault, createBackupKeyVault(), clock, errors, BuildConfig.VERSION_NAME, backupFilesDir(), ::createBackupFolder)
+        BackupManager(
+            database,
+            settings,
+            aadhaarVault,
+            createBackupKeyVault(),
+            clock,
+            errors,
+            BuildConfig.VERSION_NAME,
+            backupFilesDir(),
+            databaseDamaged = { databaseDamaged.value || damageMarker.exists() },
+            folderFor = ::createBackupFolder,
+        )
     }
     val dailyRunner: DailyRunner by lazy {
         DailyRunner(
@@ -118,10 +145,20 @@ open class App : Application() {
             outboxKicker,
             notices,
             errors,
-            weeklyBackup = backups::runWeeklyIfDue,
-            chosenSimMissing = { deviceChecks.chosenSimMissing(settings.current().simSubscriptionId) },
+            weeklyBackup = backups::runScheduledBackups,
+            simProblem = ::simProblem,
             refreshWidget = ::refreshWidget,
         )
+    }
+
+    /** The chosen SIM has gone, or none is chosen on a phone that asks every time. */
+    private suspend fun simProblem(): ProblemKind? {
+        val chosen = settings.current().simSubscriptionId
+        return when {
+            deviceChecks.chosenSimMissing(chosen) -> ProblemKind.SIM_MISSING
+            chosen == null && deviceChecks.phoneAsksWhichSim() -> ProblemKind.SIM_NOT_CHOSEN
+            else -> null
+        }
     }
 
     protected open fun createDatabase(): AppDatabase = AppDatabase.create(this, ::markDatabaseDamaged)
@@ -136,13 +173,90 @@ open class App : Application() {
     /** Layer 3 of "reminders must never silently stop" (SPEC 9), on every app open. */
     protected open fun onAppOpened() {
         backgroundScope.launch {
-            armReminders()
-            dailyRunner.runIfDue()
-            outboxKicker.kick()
+            attempt("Opening: alarms") { armReminders() }
+            attempt("Opening: setup date") { noteSetupDone() }
+            attempt("Opening: daily run") { dailyRunner.runIfDue() }
+            attempt("Opening: outbox") { outboxKicker.kick() }
         }
     }
 
+    /**
+     * Runs one step of a background job on its own, so one failing can't stop the ones after it.
+     * The failure goes to the error log.
+     */
+    suspend fun attempt(where: String, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            recordFailure(where, error)
+        }
+    }
+
+    /** Setup finished before version 1.0.1 recorded when, so the first open after updating does. */
+    private suspend fun noteSetupDone() {
+        val current = settings.current()
+        if (!current.onboardingDone || current.setupDoneAt != null) return
+        val now = clock.nowMillis()
+        settings.update { it.copy(setupDoneAt = it.setupDoneAt ?: now) }
+    }
+
     protected open suspend fun armReminders() = ReminderScheduling.ensureAll(this)
+
+    /**
+     * Puts a failure in the error log, with where it happened, for Swastik to read later. If the
+     * database is what broke, the details wait in the crash file instead.
+     */
+    fun recordFailure(where: String, error: Throwable) {
+        val details = LogText.describe(error)
+        val at = clock.nowMillis()
+        backgroundScope.launch {
+            try {
+                errors.log(where, details)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                runCatching { crashReports.write(at, where, details) }
+            }
+        }
+    }
+
+    /** A screen's work failed and the app carries on: say so, and keep the details for Swastik. */
+    fun onScreenFailure(error: Throwable) {
+        Handler(Looper.getMainLooper()).post { Toast.makeText(this, FailureGuard.messageFor(error), Toast.LENGTH_LONG).show() }
+        recordFailure("Screen", error)
+    }
+
+    /** Android is about to close the app, so there's no time for the database: the file it is. */
+    fun recordCrash(thread: Thread, error: Throwable) {
+        val now = clock.nowMillis()
+        crashReports.write(now, "Crash (${thread.name})", LogText.describe(error))
+        crashReports.noteCrash(now)
+    }
+
+    /** True when it's crashed so often that opening normally won't help (RecoveryActivity). */
+    fun keepsCrashing(): Boolean = CrashLoop.keepsCrashing(crashReports.crashTimes(), clock.nowMillis())
+
+    fun forgetCrashes() = crashReports.forgetCrashes()
+
+    /** Heads whatever is copied for Swastik, so he can match it to that release's mapping.txt. */
+    fun versionLine(): String =
+        "MB Fitness ${BuildConfig.VERSION_NAME}, ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}"
+
+    /** What RecoveryActivity copies for Swastik: which phone and version, and the last crash. */
+    fun crashDetails(): String {
+        val report = crashReports.peek()
+        return versionLine() + "\n" + (report?.let { "${it.where}: ${it.details}" } ?: "No details were saved.")
+    }
+
+    /** A crash last time left its details in a file. They belong in the error log. Internal for tests. */
+    internal fun collectCrashReport() {
+        backgroundScope.launch {
+            val report = crashReports.take() ?: return@launch
+            errors.log(report.where, "${report.details}\n(at ${Dates.formatFull(Dates.dayOf(report.at))} ${Dates.formatTime(report.at)})")
+        }
+    }
 
     /** True when the data file is damaged, so the app can offer a restore (SPEC 12). */
     val databaseDamaged = MutableStateFlow(false)
@@ -186,7 +300,7 @@ open class App : Application() {
 
     /** The "Fix" button on Home: sets everything up again and does today's run. */
     suspend fun repairReminders() {
-        armReminders()
+        attempt("Fix: alarms") { armReminders() }
         dailyRunner.run()
     }
 
@@ -203,6 +317,7 @@ open class App : Application() {
         if (watchingForeground) return
         watchingForeground = true
         checkDatabase()
+        collectCrashReport()
         watchForWidget()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {

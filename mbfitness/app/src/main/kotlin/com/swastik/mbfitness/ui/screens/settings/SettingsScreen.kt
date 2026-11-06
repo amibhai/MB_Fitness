@@ -39,6 +39,7 @@ import com.swastik.mbfitness.data.AppSettings
 import com.swastik.mbfitness.data.LogoStore
 import com.swastik.mbfitness.data.SettingsStore
 import com.swastik.mbfitness.domain.PhoneNumbers
+import com.swastik.mbfitness.domain.ReminderSchedule
 import com.swastik.mbfitness.domain.RenewalRule
 import com.swastik.mbfitness.domain.SettingsRules
 import com.swastik.mbfitness.ui.appViewModel
@@ -367,14 +368,20 @@ private fun TextEditDialog(edit: TextEdit, onDismiss: () -> Unit) {
 private fun ReminderTimeDialog(settings: AppSettings, onSave: (Int, Int) -> Unit, onDismiss: () -> Unit) {
     val colors = MbTheme.colors
     val picker = rememberTimePickerState(settings.reminderHour, settings.reminderMinute)
+    val allowed = ReminderSchedule.isAllowedTime(picker.hour, picker.minute)
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = colors.surface,
         title = { Text("Reminder time", style = MbType.Title, color = colors.textPrimary) },
-        text = { TimePicker(picker) },
+        text = {
+            Column {
+                TimePicker(picker)
+                if (!allowed) Text(ReminderSchedule.ALLOWED_TIME_TEXT, style = MbType.Caption, color = colors.danger)
+            }
+        },
         confirmButton = {
-            TextButton({ onSave(picker.hour, picker.minute) }, Modifier.heightIn(min = 48.dp)) {
-                Text("Save", style = MbType.Label, color = if (colors.isDark) colors.greeting else colors.button)
+            TextButton({ onSave(picker.hour, picker.minute) }, Modifier.heightIn(min = 48.dp), enabled = allowed) {
+                Text("Save", style = MbType.Label, color = if (!allowed) colors.textSecondary else if (colors.isDark) colors.greeting else colors.button)
             }
         },
         dismissButton = {

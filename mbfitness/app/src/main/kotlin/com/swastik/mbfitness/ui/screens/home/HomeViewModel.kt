@@ -7,6 +7,7 @@ import com.swastik.mbfitness.data.MemberRepository
 import com.swastik.mbfitness.data.MemberRow
 import com.swastik.mbfitness.data.SettingsStore
 import com.swastik.mbfitness.domain.BackupRules
+import com.swastik.mbfitness.domain.ClockCheck
 import com.swastik.mbfitness.domain.MemberRules
 import com.swastik.mbfitness.domain.MemberState
 import com.swastik.mbfitness.domain.MemberTab
@@ -38,15 +39,23 @@ data class MemberListItem(
 
 /** One at a time, by priority (SPEC 10.2 screen 3). */
 sealed interface HomeBanner {
+    /** The phone's date is plainly wrong, so every date in the app would be too. */
+    data object ClockWrong : HomeBanner
     data object SmsPermissionOff : HomeBanner
     data object RemindersStopped : HomeBanner
     data class BackupOverdue(val folderChosen: Boolean) : HomeBanner
+
+    /** Reminders that quote the owner's number can't go until it's set. */
+    data object OwnerNumberMissing : HomeBanner
 
     /** Left over 3 years ago. Never automatic: this only suggests it (SPEC 12). */
     data class OldRecords(val memberIds: List<Long>) : HomeBanner
 
     /** Never automatic: this only suggests it (SPEC 4-A). */
     data class LongOverdue(val memberIds: Set<Long>) : HomeBanner
+
+    /** A month since a backup was last sent off the phone (docs/DECISIONS.md). */
+    data object SendCopy : HomeBanner
 }
 
 data class HomeUiState(
@@ -153,14 +162,17 @@ class HomeViewModel(
             .map { it.id }
             .toSet()
         val now = clock.nowMillis()
-        val runHealth = ReminderSchedule.health(now, current.lastDailyRunAt)
+        val runHealth = ReminderSchedule.health(now, current.lastDailyRunAt, current.setupDoneAt)
         val banner = when {
+            ClockCheck.looksWrong(today) -> HomeBanner.ClockWrong
             !canSendSms() -> HomeBanner.SmsPermissionOff
             runHealth == RunHealth.VERY_LATE -> HomeBanner.RemindersStopped
             // Nothing to protect until there are members.
             rows.isNotEmpty() && BackupRules.isOverdue(today, current.lastBackupDay) -> HomeBanner.BackupOverdue(current.backupFolderUri != null)
+            rows.isNotEmpty() && current.trainerPhone.isBlank() -> HomeBanner.OwnerNumberMissing
             longOverdue.isNotEmpty() -> HomeBanner.LongOverdue(longOverdue)
             longGone.isNotEmpty() -> HomeBanner.OldRecords(longGone)
+            rows.isNotEmpty() && BackupRules.isCopyDue(today, current.lastCopySentDay) -> HomeBanner.SendCopy
             else -> null
         }
         return HomeUiState(
