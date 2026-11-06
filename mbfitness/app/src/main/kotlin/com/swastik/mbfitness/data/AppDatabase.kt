@@ -19,6 +19,7 @@ import com.swastik.mbfitness.domain.TemplatePacks
         FreezeEntity::class,
         MemberEventEntity::class,
         MessageEntity::class,
+        SendAttemptEntity::class,
         TemplateEntity::class,
         BroadcastEntity::class,
         QuietDateEntity::class,
@@ -33,6 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun freezes(): FreezeDao
     abstract fun events(): MemberEventDao
     abstract fun messages(): MessageDao
+    abstract fun sendAttempts(): SendAttemptDao
     abstract fun templates(): TemplateDao
     abstract fun broadcasts(): BroadcastDao
     abstract fun quietDates(): QuietDateDao

@@ -3,6 +3,8 @@ package com.swastik.mbfitness.ui.components
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,10 +43,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -104,6 +108,117 @@ fun MbTextField(
             focusedTextColor = colors.textPrimary,
             unfocusedTextColor = colors.textPrimary,
         ),
+    )
+}
+
+/** The same field, for when something needs the cursor: placeholders go in where it is. */
+@Composable
+fun MbTextField(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    error: String? = null,
+    help: String? = null,
+) {
+    val colors = MbTheme.colors
+    OutlinedTextField(
+        value,
+        onValueChange,
+        modifier.fillMaxWidth(),
+        label = { Text(label) },
+        minLines = 3,
+        textStyle = MbType.Body,
+        isError = error != null,
+        supportingText = (error ?: help)?.let { text -> { Text(text, style = MbType.Caption) } },
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = true),
+        shape = ControlShape,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = colors.accent,
+            unfocusedBorderColor = colors.textSecondary,
+            focusedLabelColor = if (colors.isDark) colors.greeting else colors.button,
+            unfocusedLabelColor = colors.textSecondary,
+            cursorColor = colors.accent,
+            focusedTextColor = colors.textPrimary,
+            unfocusedTextColor = colors.textPrimary,
+        ),
+    )
+}
+
+/** Puts [text] where the cursor is, with spaces either side only where they're needed. */
+fun TextFieldValue.inserting(text: String): TextFieldValue {
+    val before = this.text.substring(0, selection.min)
+    val after = this.text.substring(selection.max)
+    val lead = if (before.isEmpty() || before.last().isWhitespace()) "" else " "
+    val trail = if (after.isEmpty() || after.first().isWhitespace()) "" else " "
+    val inserted = lead + text + trail
+    return copy(text = before + inserted + after, selection = TextRange(before.length + inserted.length))
+}
+
+/** One choice among a few, like an audience or a template. */
+@Composable
+fun MbChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MbTheme.colors
+    Text(
+        label,
+        modifier
+            .clip(ControlShape)
+            .background(if (selected) colors.button else colors.inactive.background)
+            .selectable(selected, role = Role.RadioButton, onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        style = MbType.Label,
+        color = if (selected) colors.onButton else colors.inactive.content,
+    )
+}
+
+/** On or off, independently of the others, like the days of the week. */
+@Composable
+fun MbToggleChip(label: String, checked: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MbTheme.colors
+    Text(
+        label,
+        modifier
+            .clip(ControlShape)
+            .background(if (checked) colors.button else colors.inactive.background)
+            .toggleable(checked, role = Role.Checkbox, onValueChange = { onClick() })
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        style = MbType.Label,
+        color = if (checked) colors.onButton else colors.inactive.content,
+    )
+}
+
+/** Does something when tapped, like inserting a placeholder. */
+@Composable
+fun MbActionChip(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MbTheme.colors
+    Text(
+        label,
+        modifier
+            .clip(ControlShape)
+            .border(1.dp, colors.textSecondary, ControlShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        style = MbType.Caption,
+        color = colors.textPrimary,
+    )
+}
+
+/** Shows a message the way the member would see it. */
+@Composable
+fun SmsBubble(text: String, modifier: Modifier = Modifier) {
+    val colors = MbTheme.colors
+    Text(
+        text,
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 16.dp))
+            .background(colors.avatarBackground)
+            .padding(12.dp),
+        style = MbType.Body,
+        color = colors.textPrimary,
     )
 }
 

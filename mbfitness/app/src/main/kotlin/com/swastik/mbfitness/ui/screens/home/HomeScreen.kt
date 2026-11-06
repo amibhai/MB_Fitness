@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.swastik.mbfitness.R
 import com.swastik.mbfitness.domain.MemberState
 import com.swastik.mbfitness.domain.MemberTab
+import com.swastik.mbfitness.domain.RunHealth
 import com.swastik.mbfitness.ui.appViewModel
 import com.swastik.mbfitness.ui.components.AdvanceBadge
 import com.swastik.mbfitness.ui.components.Avatar
@@ -58,6 +59,7 @@ import com.swastik.mbfitness.ui.components.BannerTone
 import com.swastik.mbfitness.ui.components.ConfirmDialog
 import com.swastik.mbfitness.ui.components.DueBadge
 import com.swastik.mbfitness.ui.components.EmptyState
+import com.swastik.mbfitness.ui.components.LinkButton
 import com.swastik.mbfitness.ui.components.ListGap
 import com.swastik.mbfitness.ui.components.LocalSnackbar
 import com.swastik.mbfitness.ui.components.MbBanner
@@ -66,6 +68,7 @@ import com.swastik.mbfitness.ui.components.MbTextField
 import com.swastik.mbfitness.ui.components.MbTopBar
 import com.swastik.mbfitness.ui.components.ScreenPadding
 import com.swastik.mbfitness.ui.components.StatusChip
+import com.swastik.mbfitness.ui.components.rememberSmsPermissionRequest
 import com.swastik.mbfitness.ui.theme.ChipColors
 import com.swastik.mbfitness.ui.theme.MbColors
 import com.swastik.mbfitness.ui.theme.MbTheme
@@ -99,8 +102,10 @@ private fun emptyLine(tab: MemberTab): String = when (tab) {
 
 /** SPEC 10.2 screen 3. */
 @Composable
-fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit) {
-    val viewModel = appViewModel { app -> HomeViewModel(app.members, app.settings, app.clock) }
+fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit, onSmsSelected: (Set<Long>) -> Unit) {
+    val viewModel = appViewModel { app ->
+        HomeViewModel(app.members, app.settings, app.clock, app::canSendSms, app::repairReminders)
+    }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var confirmLeft by remember { mutableStateOf(false) }
     val snackbar = LocalSnackbar.current
@@ -129,6 +134,15 @@ fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit) {
                     "${state.selection.size} selected",
                     onBack = viewModel::clearSelection,
                     actions = {
+                        MbIconButton(
+                            R.drawable.ic_sms,
+                            "Send SMS to selected",
+                            {
+                                onSmsSelected(state.selection)
+                                viewModel.clearSelection()
+                            },
+                            tint = MbTheme.colors.onHeader,
+                        )
                         MbIconButton(
                             R.drawable.ic_logout,
                             "Mark selected as Left",
@@ -174,6 +188,9 @@ fun HomeScreen(onMemberClick: (Long) -> Unit, onAddMember: () -> Unit) {
 @Composable
 private fun MemberList(state: HomeUiState, viewModel: HomeViewModel, onMemberClick: (Long) -> Unit) {
     val selecting = state.selection.isNotEmpty()
+    val snackbar = LocalSnackbar.current
+    val requestPermission = rememberSmsPermissionRequest { viewModel.onResume() }
+    val fix = { viewModel.onFixReminders { snackbar.show("Reminders are set up again") } }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = ScreenPadding, end = ScreenPadding, top = ScreenPadding, bottom = FabClearance),
@@ -181,6 +198,10 @@ private fun MemberList(state: HomeUiState, viewModel: HomeViewModel, onMemberCli
     ) {
         item(key = "tiles", contentType = "tiles") {
             StatTiles(state.collectedThisMonth, state.pending, state.activeCount)
+        }
+        item(key = "lastRan", contentType = "lastRan") {
+            // The banner has its own Fix. When a more urgent banner takes that spot, this one shows.
+            LastRanLine(state.lastRan, state.runHealth, showFix = state.banner != HomeBanner.RemindersStopped, fix)
         }
         item(key = "search", contentType = "search") {
             MbTextField(
@@ -195,15 +216,31 @@ private fun MemberList(state: HomeUiState, viewModel: HomeViewModel, onMemberCli
                 },
             )
         }
-        (state.banner as? HomeBanner.LongOverdue)?.takeIf { !selecting }?.let { banner ->
+        state.banner?.takeIf { !selecting }?.let { banner ->
             item(key = "banner", contentType = "banner") {
-                val count = banner.memberIds.size
-                MbBanner(
-                    "$count ${if (count == 1) "member is" else "members are"} 60+ days overdue. Mark as Left?",
-                    BannerTone.WARNING,
-                    actionLabel = "Review",
-                    onAction = { viewModel.onReviewLongOverdue(banner.memberIds) },
-                )
+                when (banner) {
+                    HomeBanner.SmsPermissionOff -> MbBanner(
+                        "SMS permission is off. Reminders can't go until it's back on.",
+                        BannerTone.DANGER,
+                        actionLabel = "Turn on",
+                        onAction = requestPermission,
+                    )
+                    HomeBanner.RemindersStopped -> MbBanner(
+                        "Reminders haven't run for over 2 days.",
+                        BannerTone.DANGER,
+                        actionLabel = "Fix",
+                        onAction = fix,
+                    )
+                    is HomeBanner.LongOverdue -> {
+                        val count = banner.memberIds.size
+                        MbBanner(
+                            "$count ${if (count == 1) "member is" else "members are"} 60+ days overdue. Mark as Left?",
+                            BannerTone.WARNING,
+                            actionLabel = "Review",
+                            onAction = { viewModel.onReviewLongOverdue(banner.memberIds) },
+                        )
+                    }
+                }
             }
         }
         if (state.query.isBlank()) {
@@ -230,6 +267,30 @@ private fun MemberList(state: HomeUiState, viewModel: HomeViewModel, onMemberCli
                 onLongClick = { viewModel.onLongPress(item.id) },
             )
         }
+    }
+}
+
+/** Visible proof reminders are running: amber after 26 hours, red with Fix after 50 (SPEC 9). */
+@Composable
+private fun LastRanLine(text: String, health: RunHealth, showFix: Boolean, onFix: () -> Unit) {
+    val colors = MbTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 32.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text,
+            Modifier.weight(1f),
+            style = MbType.Caption,
+            color = when (health) {
+                RunHealth.OK -> colors.textSecondary
+                RunHealth.LATE -> colors.dueSoon.content
+                RunHealth.VERY_LATE -> colors.danger
+            },
+        )
+        if (health == RunHealth.VERY_LATE && showFix) LinkButton("Fix", onFix)
     }
 }
 

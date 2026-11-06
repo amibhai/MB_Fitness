@@ -184,8 +184,14 @@ data class MessageEntity(
     val broadcastId: Long? = null,
     val createdAt: Long,
     val notBefore: Long,
+    /** When the current attempt began, to spot one that never reached the radio. */
+    val attemptStartedAt: Long = 0,
     /** Set right after the radio accepts it, to tell "never sent" from "result unknown". */
     val submittedAt: Long? = null,
+    /** Results so far for this attempt. A long SMS reports one part at a time. */
+    val resultParts: Int = 0,
+    val failedParts: Int = 0,
+    val deliveredParts: Int = 0,
     val sentAt: Long? = null,
     val deliveredAt: Long? = null,
     val attempts: Int = 0,
@@ -209,6 +215,19 @@ data class BroadcastEntity(
     val audience: String,
     val createdAt: Long,
     val recipientCount: Int,
+)
+
+/**
+ * One row each time an SMS goes to the radio, whatever comes back. Pacing counts these, so a
+ * failed try still uses up the limits (hard rule 3). Kept for two days.
+ */
+@Entity(tableName = "send_attempts", indices = [Index("at"), Index("messageId")])
+data class SendAttemptEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val messageId: Long,
+    val attempt: Int,
+    val at: Long,
+    val parts: Int,
 )
 
 @Entity(tableName = "quiet_dates", indices = [Index(value = ["date"], unique = true)])

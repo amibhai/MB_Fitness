@@ -101,3 +101,29 @@ Testing notes:
 - **`App` is an open class with overridable factories.** Why: UI tests run the real screens against an in-memory database, using a `TestApp` subclass.
 - **"Send SMS" on Member detail and on multi-select arrives with Phase 5,** along with the messaging engine.
 - **Testing typed the fake Aadhaar as key presses.** Why: `adb shell input text` puts its argument in the system log, which looked like a leak but wasn't the app. The test uses a made-up number from UIDAI's 9999 test range.
+
+## 6 Nov 2026: SMS and scheduling (Phase 5)
+
+- **Three tries in all, 5 and then 30 minutes apart.** SPEC 8.5 lists three waits (5 min, 30 min, 2 h) but also "max 3 attempts", which only leaves room for two waits. docs/RULES.md says to pick the safer reading when the spec is ambiguous, and a fourth copy of a message is the worse mistake. A failed message stays visible in Messages with Retry, so nothing is lost. To use the 2-hour wait instead, add it back in `RetryPolicy`.
+- **Pacing counts every try that reaches the radio, in a new `send_attempts` table, kept for 2 days.** Why: counting only messages that went would let a whole queue hit the radio at once with no signal, because each failure freed up its slot. That breaks hard rule 3, and Android's own 30-in-30-minutes check counts tries too. A try that was blocked before reaching the radio (no permission, no number) isn't counted.
+- **A clock moved backwards can't freeze sending.** Tries with a time in the future are ignored when pacing.
+- **A daily run that couldn't plan doesn't count as a run.** It doesn't set `lastDailyRunDay` and posts no summary. Why: otherwise the watchdog wouldn't try again, Home would stay green and the "reminders stopped" notice could never fire, which is the silent failure SPEC 9 exists to prevent.
+- **Retrying an old reminder plans it afresh.** Why: a reminder that failed on Monday says "due today", which is false by Thursday, and SPEC 8.2 says every SMS stays truthful. If the member has since paid, or nothing is due, nothing goes and the screen says so. Thank-yous, manual SMS and broadcasts stay true, so they're retried as written.
+- **Late results still count.** A row given up on after 10 minutes ("may have gone") turns to Sent or Delivered if the result or delivery report arrives after all, so bhaiya isn't led into sending it twice. A delivery report that overtakes the sent result also ends as Delivered.
+- **A crash before the radio doesn't use up a try,** and neither does a block.
+- **A message cancelled by hand stays cancelled.** Why: found on the phone. Cancelling used to clear the duplicate key, so the planner sent the same reminder again at the next run. The key now stays, and only that message is stopped: later reminders in the schedule still go. Replacing a stale reminder still clears the key, because its replacement needs it.
+- **Two WorkManager names for the outbox: `outbox-now` (APPEND_OR_REPLACE, as SPEC 9 says) and `outbox-later` (REPLACE, delayed).** Why: with one name, a wake-up for tomorrow morning would make a message written now wait behind it. The engine's lock stops the two from ever sending at once.
+- **The sent receiver starts the outbox instead of setting its own wake-up,** because only the outbox can see the whole queue and pick the right time.
+- **Test mode is read before every message,** so turning it on takes effect from the very next one.
+- **The morning summary says "on their way", not "sent".** SPEC 8.10 says "12 reminders sent", but the summary posts right after planning, before the outbox has finished, so "sent" could be false.
+- **Delivery status comes from the result code alone.** Why: the PendingIntents are immutable (SPEC 8.5), so the radio can't attach the delivery PDU.
+- **SIM-missing notices wait for Phase 6,** along with the SIM picker in Settings. Until a SIM is chosen, the phone's default is used.
+- **Each template only allows the placeholders it can fill.** Why: `{receipt_no}` on a reminder has no value, so the planner would hold that SMS back forever. `TemplateRules.placeholdersFor` is stricter than the spec's single list. An `{aadhaar}` placeholder is refused everywhere.
+- **Switching language keeps what's on or off and when things send.** Reset puts everything back as it came. Why: moving to Hinglish shouldn't undo a changed schedule, but Reset should mean reset.
+- **The gym's name is added to manual SMS and broadcasts if it isn't already there,** with a preview showing the final text. Why: SPEC 8.9 wants the gym's name in every message.
+- **Broadcasts can be cancelled as a group, and retried as a group.** Why: stopping a mistaken 50-member broadcast shouldn't take 50 taps. The spec only asks for Retry and Cancel in general.
+- **Messages opens on the Failed tab if anything has failed.** Why: SPEC 8.10 sends a failure notification to Messages, and that's what needs looking at.
+- **Unsaved template edits survive switching between templates,** and leaving the screen asks first. Why: never lose data.
+- **Member detail's buttons became Call and Send SMS on one row, with Freeze below.** Why: three on one row wrapped "Unfreeze" mid-word.
+- **The owner's number is set by a debug hook until Phase 6 builds Settings → Gym.** `am start ... --es mbf_trainer <number>`. It only exists in debug builds.
+- **Debug-only text size hook.** `am start ... --ef mbf_font 1.3` sets the text size for this app alone. Why: changing the phone's own font affects whoever is holding it, and a dropped USB connection could leave it stuck. `MainActivity.attachBaseContext` calls it, and in a release build that does nothing.

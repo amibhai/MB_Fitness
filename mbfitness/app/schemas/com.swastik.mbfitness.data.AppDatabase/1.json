@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "202397f967c09a732df4004382805c72",
+    "identityHash": "d5be364e12913d43dbfd1e26c3c18ef1",
     "entities": [
       {
         "tableName": "plans",
@@ -558,7 +558,7 @@
       },
       {
         "tableName": "messages",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `memberId` INTEGER, `phone` TEXT NOT NULL, `kind` TEXT NOT NULL, `body` TEXT NOT NULL, `parts` INTEGER NOT NULL, `priority` INTEGER NOT NULL, `status` TEXT NOT NULL, `forExpiry` INTEGER, `dedupeKey` TEXT, `broadcastId` INTEGER, `createdAt` INTEGER NOT NULL, `notBefore` INTEGER NOT NULL, `submittedAt` INTEGER, `sentAt` INTEGER, `deliveredAt` INTEGER, `attempts` INTEGER NOT NULL, `lastError` TEXT, FOREIGN KEY(`memberId`) REFERENCES `members`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `memberId` INTEGER, `phone` TEXT NOT NULL, `kind` TEXT NOT NULL, `body` TEXT NOT NULL, `parts` INTEGER NOT NULL, `priority` INTEGER NOT NULL, `status` TEXT NOT NULL, `forExpiry` INTEGER, `dedupeKey` TEXT, `broadcastId` INTEGER, `createdAt` INTEGER NOT NULL, `notBefore` INTEGER NOT NULL, `attemptStartedAt` INTEGER NOT NULL, `submittedAt` INTEGER, `resultParts` INTEGER NOT NULL, `failedParts` INTEGER NOT NULL, `deliveredParts` INTEGER NOT NULL, `sentAt` INTEGER, `deliveredAt` INTEGER, `attempts` INTEGER NOT NULL, `lastError` TEXT, FOREIGN KEY(`memberId`) REFERENCES `members`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -635,9 +635,33 @@
             "notNull": true
           },
           {
+            "fieldPath": "attemptStartedAt",
+            "columnName": "attemptStartedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
             "fieldPath": "submittedAt",
             "columnName": "submittedAt",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "resultParts",
+            "columnName": "resultParts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failedParts",
+            "columnName": "failedParts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deliveredParts",
+            "columnName": "deliveredParts",
+            "affinity": "INTEGER",
+            "notNull": true
           },
           {
             "fieldPath": "sentAt",
@@ -728,6 +752,68 @@
             "referencedColumns": [
               "id"
             ]
+          }
+        ]
+      },
+      {
+        "tableName": "send_attempts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `messageId` INTEGER NOT NULL, `attempt` INTEGER NOT NULL, `at` INTEGER NOT NULL, `parts` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "messageId",
+            "columnName": "messageId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attempt",
+            "columnName": "attempt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "at",
+            "columnName": "at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parts",
+            "columnName": "parts",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_send_attempts_at",
+            "unique": false,
+            "columnNames": [
+              "at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_send_attempts_at` ON `${TABLE_NAME}` (`at`)"
+          },
+          {
+            "name": "index_send_attempts_messageId",
+            "unique": false,
+            "columnNames": [
+              "messageId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_send_attempts_messageId` ON `${TABLE_NAME}` (`messageId`)"
           }
         ]
       },
@@ -934,7 +1020,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '202397f967c09a732df4004382805c72')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd5be364e12913d43dbfd1e26c3c18ef1')"
     ]
   }
 }

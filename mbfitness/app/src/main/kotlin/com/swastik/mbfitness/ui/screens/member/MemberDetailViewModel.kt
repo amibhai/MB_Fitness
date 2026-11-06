@@ -6,11 +6,13 @@ import com.swastik.mbfitness.data.ExpiryChange
 import com.swastik.mbfitness.data.MemberEntity
 import com.swastik.mbfitness.data.MemberRepository
 import com.swastik.mbfitness.data.MessageEntity
+import com.swastik.mbfitness.data.MessageRepository
 import com.swastik.mbfitness.data.PaymentEntity
 import com.swastik.mbfitness.data.SettingsStore
 import com.swastik.mbfitness.domain.MemberRules
 import com.swastik.mbfitness.domain.MemberTab
 import com.swastik.mbfitness.domain.TodayProvider
+import com.swastik.mbfitness.work.OutboxKicker
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,11 +44,14 @@ data class MemberDetailUiState(
     val messages: List<MessageEntity> = emptyList(),
     val aadhaar: AadhaarRow = AadhaarRow.None,
     val pinSet: Boolean = false,
+    val gymName: String = "",
 )
 
 class MemberDetailViewModel(
     private val memberId: Long,
     private val members: MemberRepository,
+    private val messages: MessageRepository,
+    private val kicker: OutboxKicker,
     settings: SettingsStore,
     private val clock: TodayProvider,
 ) : ViewModel() {
@@ -75,6 +80,7 @@ class MemberDetailViewModel(
                 messages = record.messages.take(MESSAGES_SHOWN),
                 aadhaar = aadhaarRow(member?.aadhaarLast4, shown),
                 pinSet = current.pinHash != null,
+                gymName = current.gymName,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), MemberDetailUiState())
 
@@ -90,6 +96,15 @@ class MemberDetailViewModel(
         shown.grouped != null -> AadhaarRow.Revealed(shown.grouped, shown.secondsLeft)
         shown.unavailable -> AadhaarRow.Unavailable(last4)
         else -> AadhaarRow.Masked(last4)
+    }
+
+    /** Goes through the outbox like every other SMS (hard rule 3). */
+    fun sendSms(text: String, phone: String, onDone: () -> Unit) {
+        viewModelScope.launch {
+            messages.queueManual(memberId, phone, text)
+            kicker.kick()
+            onDone()
+        }
     }
 
     fun freeze() = launch { members.freeze(memberId) }

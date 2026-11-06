@@ -47,7 +47,13 @@ private fun NavRow(label: String, onClick: () -> Unit) {
 
 /** Part of SPEC 10.2 screen 12. The rest arrives with Phase 6. */
 @Composable
-fun SettingsScreen(onSetPin: () -> Unit, onPlans: () -> Unit, onRecycleBin: () -> Unit) {
+fun SettingsScreen(
+    onSetPin: () -> Unit,
+    onPlans: () -> Unit,
+    onRecycleBin: () -> Unit,
+    onTemplates: () -> Unit,
+    onQuietDays: () -> Unit,
+) {
     val context = LocalContext.current
     val settingsStore = (context.applicationContext as App).settings
     val settings by settingsStore.settings.collectAsStateWithLifecycle(AppSettings())
@@ -66,6 +72,9 @@ fun SettingsScreen(onSetPin: () -> Unit, onPlans: () -> Unit, onRecycleBin: () -
         ) {
             SectionLabel("Gym")
             NavRow("Plans and prices", onPlans)
+            SectionLabel("Reminders")
+            NavRow("Templates", onTemplates)
+            NavRow("Quiet days", onQuietDays)
             SectionLabel("Data")
             NavRow("Recycle bin", onRecycleBin)
             SectionLabel("Security")

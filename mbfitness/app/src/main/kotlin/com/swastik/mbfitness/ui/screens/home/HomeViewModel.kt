@@ -10,6 +10,8 @@ import com.swastik.mbfitness.domain.MemberRules
 import com.swastik.mbfitness.domain.MemberState
 import com.swastik.mbfitness.domain.MemberTab
 import com.swastik.mbfitness.domain.PhoneNumbers
+import com.swastik.mbfitness.domain.ReminderSchedule
+import com.swastik.mbfitness.domain.RunHealth
 import com.swastik.mbfitness.domain.ScreenRules
 import com.swastik.mbfitness.domain.TodayProvider
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +35,11 @@ data class MemberListItem(
     val advance: Long,
 )
 
+/** One at a time, by priority (SPEC 10.2 screen 3). Backup overdue joins in Phase 6. */
 sealed interface HomeBanner {
+    data object SmsPermissionOff : HomeBanner
+    data object RemindersStopped : HomeBanner
+
     /** Never automatic: this only suggests it (SPEC 4-A). */
     data class LongOverdue(val memberIds: Set<Long>) : HomeBanner
 }
@@ -52,6 +58,8 @@ data class HomeUiState(
     val totalMembers: Int = 0,
     val selection: Set<Long> = emptySet(),
     val banner: HomeBanner? = null,
+    val lastRan: String = "",
+    val runHealth: RunHealth = RunHealth.OK,
     val loaded: Boolean = false,
 )
 
@@ -61,6 +69,8 @@ class HomeViewModel(
     private val members: MemberRepository,
     private val settings: SettingsStore,
     private val clock: TodayProvider,
+    private val canSendSms: () -> Boolean,
+    private val repairReminders: suspend () -> Unit,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val tab = MutableStateFlow(MemberTab.OVERDUE)
@@ -80,8 +90,19 @@ class HomeViewModel(
 
     fun onTabSelected(selected: MemberTab) = tab.update { selected }
 
-    /** Coming back to the app can mean a new day, which moves members between tabs. */
+    /**
+     * Coming back to the app can mean a new day, which moves members between tabs, or a
+     * permission changed in Android's settings.
+     */
     fun onResume() = tick.update { it + 1 }
+
+    fun onFixReminders(onDone: () -> Unit) {
+        viewModelScope.launch {
+            repairReminders()
+            tick.update { it + 1 }
+            onDone()
+        }
+    }
 
     fun onLongPress(id: Long) = selection.update { it + id }
 
@@ -115,6 +136,14 @@ class HomeViewModel(
             .filter { MemberRules.suggestMarkAsLeft(it.status, it.expiryDate, today) }
             .map { it.id }
             .toSet()
+        val now = clock.nowMillis()
+        val runHealth = ReminderSchedule.health(now, current.lastDailyRunAt)
+        val banner = when {
+            !canSendSms() -> HomeBanner.SmsPermissionOff
+            runHealth == RunHealth.VERY_LATE -> HomeBanner.RemindersStopped
+            longOverdue.isNotEmpty() -> HomeBanner.LongOverdue(longOverdue)
+            else -> null
+        }
         return HomeUiState(
             settings = current,
             testMode = settings.isTestMode(current),
@@ -128,7 +157,9 @@ class HomeViewModel(
             items = items,
             totalMembers = rows.size,
             selection = filter.selection,
-            banner = longOverdue.takeIf { it.isNotEmpty() }?.let(HomeBanner::LongOverdue),
+            banner = banner,
+            lastRan = ReminderSchedule.lastRanText(now, current.lastDailyRunAt),
+            runHealth = runHealth,
             loaded = true,
         )
     }

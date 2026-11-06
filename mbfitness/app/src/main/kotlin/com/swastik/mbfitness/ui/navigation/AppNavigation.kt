@@ -1,5 +1,6 @@
 package com.swastik.mbfitness.ui.navigation
 
+import androidx.activity.compose.LocalActivity
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.swastik.mbfitness.App
+import com.swastik.mbfitness.MainActivity
 import com.swastik.mbfitness.R
 import com.swastik.mbfitness.data.AppSettings
 import com.swastik.mbfitness.data.PaymentSaved
@@ -56,18 +58,22 @@ import com.swastik.mbfitness.ui.screens.lock.SetPinViewModel
 import com.swastik.mbfitness.ui.screens.member.MemberDetailScreen
 import com.swastik.mbfitness.ui.screens.member.MemberFormResult
 import com.swastik.mbfitness.ui.screens.member.MemberFormScreen
+import com.swastik.mbfitness.ui.screens.messages.BroadcastScreen
+import com.swastik.mbfitness.ui.screens.messages.MessagesScreen
 import com.swastik.mbfitness.ui.screens.payment.PaymentDetailScreen
 import com.swastik.mbfitness.ui.screens.payment.RecordPaymentScreen
 import com.swastik.mbfitness.ui.screens.payment.UpiQrScreen
 import com.swastik.mbfitness.ui.screens.settings.PlansScreen
+import com.swastik.mbfitness.ui.screens.settings.QuietDaysScreen
 import com.swastik.mbfitness.ui.screens.settings.RecycleBinScreen
 import com.swastik.mbfitness.ui.screens.settings.SettingsScreen
+import com.swastik.mbfitness.ui.screens.settings.TemplatesScreen
 import com.swastik.mbfitness.ui.screens.today.TodayClosingScreen
 import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
+import kotlin.reflect.KClass
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import kotlin.reflect.KClass
 
 @Serializable
 data object MembersRoute
@@ -110,6 +116,16 @@ data object PlansRoute
 
 @Serializable
 data object RecycleBinRoute
+
+/** Hand-picked members, comma separated. Empty means choose an audience on the screen. */
+@Serializable
+data class BroadcastRoute(val pickedIds: String = "")
+
+@Serializable
+data object TemplatesRoute
+
+@Serializable
+data object QuietDaysRoute
 
 private data class TopLevel(val route: Any, val type: KClass<*>, val label: String, @DrawableRes val icon: Int)
 
@@ -183,16 +199,32 @@ fun AppNavigation() {
                     HomeScreen(
                         onMemberClick = { go(MemberRoute(it)) },
                         onAddMember = { go(AddMemberRoute) },
+                        onSmsSelected = { ids -> go(BroadcastRoute(ids.joinToString(","))) },
                     )
                 }
                 composable<TodayRoute> { TodayClosingScreen() }
-                composable<MessagesRoute> { Placeholder("Messages") }
+                composable<MessagesRoute> { MessagesScreen(onBroadcast = { go(BroadcastRoute()) }) }
+                composable<BroadcastRoute> { entry ->
+                    val picked = entry.toRoute<BroadcastRoute>().pickedIds.split(",").mapNotNull { it.toLongOrNull() }.toSet()
+                    BroadcastScreen(
+                        pickedIds = picked,
+                        onBack = { navController.popBackStack() },
+                        onSent = { plan ->
+                            navController.popBackStack()
+                            snackbar.show(plan)
+                        },
+                    )
+                }
+                composable<TemplatesRoute> { TemplatesScreen(onBack = { navController.popBackStack() }) }
+                composable<QuietDaysRoute> { QuietDaysScreen(onBack = { navController.popBackStack() }) }
                 composable<ReportsRoute> { Placeholder("Reports") }
                 composable<SettingsRoute> {
                     SettingsScreen(
                         onSetPin = { go(SetPinRoute) },
                         onPlans = { go(PlansRoute) },
                         onRecycleBin = { go(RecycleBinRoute) },
+                        onTemplates = { go(TemplatesRoute) },
+                        onQuietDays = { go(QuietDaysRoute) },
                     )
                 }
                 composable<SetPinRoute> {
@@ -265,6 +297,19 @@ fun AppNavigation() {
                 }
                 composable<PlansRoute> { PlansScreen(onBack = { navController.popBackStack() }) }
                 composable<RecycleBinRoute> { RecycleBinScreen(onBack = { navController.popBackStack() }) }
+            }
+        }
+
+        // A notification asked for this (SPEC 8.10). It waits here until the app is unlocked.
+        val openMessages = (LocalActivity.current as? MainActivity)?.openMessagesRequest
+        if (openMessages?.value == true) {
+            LaunchedEffect(Unit) {
+                openMessages.value = false
+                snackbar.dismiss()
+                navController.navigate(MessagesRoute) {
+                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                    launchSingleTop = true
+                }
             }
         }
 

@@ -664,6 +664,7 @@ class MemberRepository(
             payments.purgeDeletedBefore(cutoff)
             messages.pruneBefore(Dates.millisAt(Dates.addMonths(today, -MESSAGE_RETENTION_MONTHS), 0))
             db.quietDates().purgeBefore(today - QUIET_DATE_RETENTION_DAYS)
+            db.sendAttempts().purgeBefore(Dates.millisAt(today - SEND_LOG_RETENTION_DAYS, 0))
         }
     }
 
@@ -819,6 +820,7 @@ class MemberRepository(
         private const val RECYCLE_BIN_MILLIS = RECYCLE_BIN_DAYS * 24 * 60 * 60 * 1000
         private const val MESSAGE_RETENTION_MONTHS = 18
         private const val QUIET_DATE_RETENTION_DAYS = 30L
+        private const val SEND_LOG_RETENTION_DAYS = 2L
 
         private val plannedKinds = MessageKind.entries.filter { it.isPlanned }
         private val feeReminderKinds = MessageKind.entries.filter { it.isFeeReminder }

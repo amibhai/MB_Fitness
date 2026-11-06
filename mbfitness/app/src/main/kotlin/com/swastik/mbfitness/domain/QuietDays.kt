@@ -23,6 +23,10 @@ class QuietCalendar(
     fun nextNormalDay(after: Long): Long? =
         (after + 1..after + MAX_DAYS_AHEAD).firstOrNull { !isQuiet(it) }
 
+    /** The next quiet day, counting [from] itself. Null if none is set. */
+    fun nextQuietDay(from: Long): Long? =
+        (from..from + MAX_DAYS_AHEAD).firstOrNull { isQuiet(it) }
+
     companion object {
         private const val MAX_DAYS_AHEAD = 366L
         const val PURGE_AFTER_DAYS = 30L

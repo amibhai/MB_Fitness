@@ -31,6 +31,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.swastik.mbfitness.App
 import com.swastik.mbfitness.R
 import com.swastik.mbfitness.data.MemberEntity
 import com.swastik.mbfitness.data.MessageEntity
@@ -61,12 +62,13 @@ import com.swastik.mbfitness.ui.components.ScreenPadding
 import com.swastik.mbfitness.ui.components.SecondaryButton
 import com.swastik.mbfitness.ui.components.SectionLabel
 import com.swastik.mbfitness.ui.components.StatusChip
+import com.swastik.mbfitness.ui.components.rememberSmsPermissionRequest
 import com.swastik.mbfitness.ui.screens.home.statusColors
 import com.swastik.mbfitness.ui.screens.home.statusLabel
 import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
 
-private enum class DetailDialog { FREEZE, LEFT, DELETE, STOP_SMS, REMOVE_AADHAAR, PIN_FOR_REVEAL, NEED_PIN }
+private enum class DetailDialog { SEND_SMS, FREEZE, LEFT, DELETE, STOP_SMS, REMOVE_AADHAAR, PIN_FOR_REVEAL, NEED_PIN }
 
 /** SPEC 10.2 screen 4. */
 @Composable
@@ -79,7 +81,7 @@ fun MemberDetailScreen(
     onSetPin: () -> Unit,
 ) {
     val viewModel = appViewModel(key = "member-$memberId") { app ->
-        MemberDetailViewModel(memberId, app.members, app.settings, app.clock)
+        MemberDetailViewModel(memberId, app.members, app.messages, app.outboxKicker, app.settings, app.clock)
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
@@ -151,7 +153,13 @@ fun MemberDetailScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ProfileCard(member, state)
-            ActionButtons(member, viewModel, onRecordPayment = { onRecordPayment(memberId) }, onFreeze = { dialog = DetailDialog.FREEZE })
+            ActionButtons(
+                member,
+                viewModel,
+                onRecordPayment = { onRecordPayment(memberId) },
+                onSendSms = { dialog = DetailDialog.SEND_SMS },
+                onFreeze = { dialog = DetailDialog.FREEZE },
+            )
             SmsCard(member, viewModel, onStopSms = { dialog = DetailDialog.STOP_SMS })
             AadhaarCard(
                 state.aadhaar,
@@ -167,6 +175,22 @@ fun MemberDetailScreen(
     }
 
     when (dialog) {
+        DetailDialog.SEND_SMS -> member?.let { person ->
+            val app = LocalContext.current.applicationContext as App
+            val requestPermission = rememberSmsPermissionRequest()
+            SendSmsDialog(
+                memberName = person.name,
+                hasConsent = person.smsConsent,
+                hasLeft = person.status == MemberState.LEFT,
+                gymName = state.gymName,
+                onSend = { text ->
+                    dialog = null
+                    if (!app.canSendSms()) requestPermission()
+                    viewModel.sendSms(text, person.phone) { snackbar.show("SMS is on its way") }
+                },
+                onDismiss = { dialog = null },
+            )
+        }
         DetailDialog.FREEZE -> ConfirmDialog(
             title = "Freeze membership?",
             message = "Reminders stop while frozen. Expiry moves forward by the days frozen.",
@@ -289,6 +313,7 @@ private fun ActionButtons(
     member: MemberEntity,
     viewModel: MemberDetailViewModel,
     onRecordPayment: () -> Unit,
+    onSendSms: () -> Unit,
     onFreeze: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -304,20 +329,21 @@ private fun ActionButtons(
             Modifier.weight(1f),
             icon = R.drawable.ic_call,
         )
-        when (member.status) {
-            MemberState.ACTIVE -> SecondaryButton("Freeze", onFreeze, Modifier.weight(1f), icon = R.drawable.ic_ac_unit)
-            MemberState.FROZEN -> SecondaryButton(
-                "Unfreeze",
-                {
-                    viewModel.unfreeze { change ->
-                        change?.let { snackbar.show("Valid till ${Dates.formatShort(it.after)} now") }
-                    }
-                },
-                Modifier.weight(1f),
-                icon = R.drawable.ic_ac_unit,
-            )
-            MemberState.LEFT -> Unit
-        }
+        SecondaryButton("Send SMS", onSendSms, Modifier.weight(1f), icon = R.drawable.ic_sms)
+    }
+    when (member.status) {
+        MemberState.ACTIVE -> SecondaryButton("Freeze", onFreeze, Modifier.fillMaxWidth(), icon = R.drawable.ic_ac_unit)
+        MemberState.FROZEN -> SecondaryButton(
+            "Unfreeze",
+            {
+                viewModel.unfreeze { change ->
+                    change?.let { snackbar.show("Valid till ${Dates.formatShort(it.after)} now") }
+                }
+            },
+            Modifier.fillMaxWidth(),
+            icon = R.drawable.ic_ac_unit,
+        )
+        MemberState.LEFT -> Unit
     }
 }
 

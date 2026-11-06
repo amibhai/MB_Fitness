@@ -24,6 +24,23 @@ data class MemberRow(
     val deletedAt: Long?,
 )
 
+/** Who the reminder planner looks at, with only the fields it needs (SPEC 9). */
+data class PlannerRow(
+    val id: Long,
+    val name: String,
+    val phone: String,
+    val status: MemberState,
+    val expiryDate: Long,
+    val balance: Long,
+    val planPrice: Long,
+    val planName: String,
+    val dob: Long?,
+    val smsConsent: Boolean,
+    val remindersEnabled: Boolean,
+    val lastPaymentId: Long?,
+    val lastPaymentOn: Long?,
+)
+
 /** Just enough to name a member when reporting a clash. */
 data class MemberBrief(val id: Long, val name: String, val phone: String)
 
@@ -86,6 +103,22 @@ interface MemberDao {
 
     @Query("SELECT $ROW_COLUMNS FROM members m JOIN plans p ON p.id = m.planId WHERE m.deletedAt IS NOT NULL ORDER BY m.deletedAt DESC")
     fun observeDeletedRows(): Flow<List<MemberRow>>
+
+    @Query(
+        """
+        SELECT m.id, m.name, m.phone, m.status, m.expiryDate, m.dob, m.smsConsent, m.remindersEnabled,
+            p.price AS planPrice, p.name AS planName,
+            COALESCE((SELECT SUM(pay.charged - pay.paid) FROM payments pay
+                      WHERE pay.memberId = m.id AND pay.deletedAt IS NULL), 0) AS balance,
+            (SELECT pay.id FROM payments pay WHERE pay.memberId = m.id AND pay.deletedAt IS NULL
+             ORDER BY pay.paidOn DESC, pay.id DESC LIMIT 1) AS lastPaymentId,
+            (SELECT pay.paidOn FROM payments pay WHERE pay.memberId = m.id AND pay.deletedAt IS NULL
+             ORDER BY pay.paidOn DESC, pay.id DESC LIMIT 1) AS lastPaymentOn
+        FROM members m JOIN plans p ON p.id = m.planId
+        WHERE m.deletedAt IS NULL AND m.status = 'ACTIVE' AND m.smsConsent = 1 AND m.remindersEnabled = 1
+        """,
+    )
+    suspend fun plannerRows(): List<PlannerRow>
 
     @Query("SELECT id, name, phone FROM members WHERE activePhone = :phone")
     suspend fun briefByActivePhone(phone: String): MemberBrief?
