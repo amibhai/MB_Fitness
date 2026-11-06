@@ -17,15 +17,17 @@ import com.swastik.mbfitness.domain.PaymentMode
 import com.swastik.mbfitness.domain.PhoneNumbers
 import com.swastik.mbfitness.domain.ReceiptNumbers
 import com.swastik.mbfitness.domain.ReplayResult
+import com.swastik.mbfitness.domain.ReportEvent
+import com.swastik.mbfitness.domain.ReportPayment
 import com.swastik.mbfitness.domain.SmsSegments
 import com.swastik.mbfitness.domain.TemplateEngine
 import com.swastik.mbfitness.domain.TemplateValues
 import com.swastik.mbfitness.domain.TodayProvider
+import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.time.LocalDate
 
 /** A previous version of a payment, kept for disputes (SPEC 7.5). */
 @Serializable
@@ -594,6 +596,10 @@ class MemberRepository(
     // ---- Import (SPEC 7.9) ----
 
     suspend fun activePlanMonths(): List<Int> = plans.activeMonths()
+
+    fun observeReportPayments(): Flow<List<ReportPayment>> = payments.observeForReports()
+
+    fun observeReportEvents(): Flow<List<ReportEvent>> = events.observeForReports()
 
     /** Members who left over 3 years ago, for the "remove old records?" suggestion (SPEC 12). */
     fun observeLongGone(): Flow<List<Long>> = members.observeLeftBefore(Dates.addMonths(clock.today(), -OLD_RECORDS_MONTHS))

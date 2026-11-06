@@ -6,6 +6,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.swastik.mbfitness.domain.MemberEventType
 import com.swastik.mbfitness.domain.MemberState
+import com.swastik.mbfitness.domain.ReportEvent
 import kotlinx.coroutines.flow.Flow
 
 /** A member with the plan name and live balance, for lists. */
@@ -193,4 +194,13 @@ interface MemberEventDao {
 
     @Query("SELECT COUNT(*) FROM member_events WHERE type = :type AND date BETWEEN :from AND :to")
     suspend fun countBetween(type: MemberEventType, from: Long, to: Long): Int
+
+    /** A member in the recycle bin leaves the reports with them, and comes back if restored. */
+    @Query(
+        """
+        SELECT e.memberId, e.type, e.date FROM member_events e JOIN members m ON m.id = e.memberId
+        WHERE m.deletedAt IS NULL ORDER BY e.date, e.id
+        """,
+    )
+    fun observeForReports(): Flow<List<ReportEvent>>
 }

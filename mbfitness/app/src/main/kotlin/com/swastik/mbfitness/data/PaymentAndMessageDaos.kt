@@ -10,6 +10,7 @@ import androidx.room.Upsert
 import com.swastik.mbfitness.domain.MessageKind
 import com.swastik.mbfitness.domain.MessageStatus
 import com.swastik.mbfitness.domain.PaymentMode
+import com.swastik.mbfitness.domain.ReportPayment
 import kotlinx.coroutines.flow.Flow
 
 /** A payment with the member's name, for Today's closing and Reports. */
@@ -74,6 +75,15 @@ interface PaymentDao {
         """,
     )
     fun observeCollectedBetween(from: Long, to: Long): Flow<Long>
+
+    @Query(
+        """
+        SELECT pay.id, pay.memberId, pay.kind, pay.charged, pay.paid, pay.paidOn
+        FROM payments pay JOIN members m ON m.id = pay.memberId
+        WHERE pay.deletedAt IS NULL AND m.deletedAt IS NULL ORDER BY pay.paidOn, pay.id
+        """,
+    )
+    fun observeForReports(): Flow<List<ReportPayment>>
 }
 
 /** A message with the member's name, for the Messages screen. */

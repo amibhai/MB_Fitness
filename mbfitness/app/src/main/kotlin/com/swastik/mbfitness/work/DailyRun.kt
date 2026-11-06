@@ -34,7 +34,6 @@ import com.swastik.mbfitness.data.MessageRepository
 import com.swastik.mbfitness.data.SettingsStore
 import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.MemberRules
-import com.swastik.mbfitness.domain.MemberState
 import com.swastik.mbfitness.domain.MemberTab
 import com.swastik.mbfitness.domain.MessageKind
 import com.swastik.mbfitness.domain.MorningSummary
@@ -112,6 +111,7 @@ class DailyRunner(
     /** False means a backup was due and couldn't be made. */
     private val weeklyBackup: suspend () -> Boolean = { true },
     private val chosenSimMissing: suspend () -> Boolean = { false },
+    private val refreshWidget: suspend () -> Unit = {},
 ) {
     suspend fun runIfDue(): Boolean {
         val current = settings.current()
@@ -133,7 +133,7 @@ class DailyRunner(
         step("outbox") { kicker.kick() }
         step("backup") { if (!weeklyBackup()) notices.problem(ProblemKind.BACKUP_OVERDUE) }
         step("sim") { if (chosenSimMissing()) notices.problem(ProblemKind.SIM_MISSING) }
-        // The widget refresh joins here in Phase 7.
+        step("widget") { refreshWidget() }
         val summary = plan?.let { step("summary") { postSummary(it, ignoreQuietDay) } }
         if (plan != null) {
             step("finish") {
@@ -179,7 +179,7 @@ class DailyRunner(
         val facts = SummaryFacts(
             due = tabs[MemberTab.DUE_SOON] ?: 0,
             overdue = tabs[MemberTab.OVERDUE] ?: 0,
-            balancePending = rows.filter { it.status != MemberState.LEFT }.sumOf { MemberRules.due(it.balance) },
+            balancePending = rows.filter { MemberRules.countsAsPending(it.status) }.sumOf { MemberRules.due(it.balance) },
             onTheirWay = planned.count { it.kind != MessageKind.BIRTHDAY },
             failed = messages.failedSince(Dates.millisAt(today - 1, 0)),
             quietReason = if (isQuiet) quiet.reason(today) else null,

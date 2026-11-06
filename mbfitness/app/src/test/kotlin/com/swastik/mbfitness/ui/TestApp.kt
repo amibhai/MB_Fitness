@@ -65,6 +65,11 @@ class TestApp : App() {
 
     override suspend fun armReminders() = Unit
 
+    var widgetRefreshes = 0
+    override suspend fun refreshWidget() {
+        widgetRefreshes++
+    }
+
     var smsAllowed = true
     override fun canSendSms(): Boolean = smsAllowed
 }

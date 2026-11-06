@@ -149,3 +149,17 @@ Testing notes:
 - **A member export has the import file's columns first,** so it can go straight back in.
 - **"Remove old records?" moves members to the recycle bin, not out of the app.** Why: SPEC 12 says never automatic, and this leaves 30 days to change your mind. It comes last among Home's banners.
 - **Debug-only hooks for checks on the phone:** a backup folder inside the app's own storage, a member with a made-up Aadhaar number, and skipping onboarding. None of them ship.
+
+## 6 Nov 2026: reports and widget (Phase 7)
+
+- **"Pending" leaves out members who have left, everywhere.** Home counted them and the morning summary didn't, so the two could disagree. Someone who has left isn't being chased. What they owe stays on their own page.
+- **New joins are new people, not imports.** An import at go-live shouldn't look like 50 people joining in a day.
+- **A member's first renewal is them joining, so it isn't counted as a renewal.** An opening balance means they were already a member, so their next payment is a renewal.
+- **A past month's Active and Pending are worked out for the end of that month,** by playing events and payments forward. The balance list at the bottom is always as of now.
+- **A member in the recycle bin leaves the reports, and comes back if restored.** Once deleted for good, their history is gone, as SPEC 12 says, so old months can change then.
+- **The month switcher goes back to the first month with data,** and stops at the current one.
+- **Charts follow the single-series rules:** one colour for all the marks, bars at most 24 dp with only the top corners rounded, a 2 dp line, and no legend because the title says what's plotted. The chart colour (`#C2410C` light, `#E8590C` dark) was checked for contrast against both card colours. Each month is a tap target bigger than its mark, and TalkBack reads each month's value, so nothing depends on seeing the chart.
+- **The active-members line doesn't start at zero.** A gym's count moves by a few people, which would look flat from zero. The picked month's exact number shows above the chart, so the scale can't mislead.
+- **One resizable widget instead of two.** It shows counts when small, and adds pending and names when taller. Why: less for bhaiya to choose between, and the same result.
+- **With an app PIN set, the widget only shows counts.** SPEC 4-E puts names and money on it, but anyone can see a home screen without getting past the lock, and a PIN means that person asked for this to stay private.
+- **The widget follows the data rather than being told.** While the app is open it watches members and payments, so no path can forget to refresh it, whether a payment, an undo, an import or a restore. The daily run also refreshes it, in case the day changed things.

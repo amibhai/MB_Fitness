@@ -27,6 +27,8 @@ import com.swastik.mbfitness.domain.TodayProvider
 import com.swastik.mbfitness.sms.BlockReason
 import com.swastik.mbfitness.sms.SimSmsSender
 import com.swastik.mbfitness.sms.SmsSender
+import com.swastik.mbfitness.widget.MbWidget
+import com.swastik.mbfitness.widget.WidgetRefresher
 import com.swastik.mbfitness.work.DailyRunner
 import com.swastik.mbfitness.work.DeviceChecks
 import com.swastik.mbfitness.work.Notices
@@ -113,6 +115,7 @@ open class App : Application() {
             errors,
             weeklyBackup = backups::runWeeklyIfDue,
             chosenSimMissing = { deviceChecks.chosenSimMissing(settings.current().simSubscriptionId) },
+            refreshWidget = ::refreshWidget,
         )
     }
 
@@ -162,6 +165,13 @@ open class App : Application() {
         databaseDamaged.value = false
     }
 
+    protected open suspend fun refreshWidget() = MbWidget.refresh(this)
+
+    /** For as long as the app is open, the widget follows every change to members and payments. */
+    private fun watchForWidget() {
+        backgroundScope.launch { WidgetRefresher(members.observeMembers(), ::refreshWidget).watch() }
+    }
+
     suspend fun rearmReminders() = armReminders()
 
     suspend fun afterRestore() {
@@ -188,6 +198,7 @@ open class App : Application() {
         if (watchingForeground) return
         watchingForeground = true
         checkDatabase()
+        watchForWidget()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {

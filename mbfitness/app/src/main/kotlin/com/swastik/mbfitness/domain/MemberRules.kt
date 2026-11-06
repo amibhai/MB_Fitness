@@ -35,6 +35,9 @@ sealed interface AfterPayment {
 }
 
 object MemberRules {
+    /** Someone who has left isn't chased, so what they owe isn't counted as pending. */
+    fun countsAsPending(state: MemberState?): Boolean = state != MemberState.LEFT
+
     const val DUE_SOON_DAYS = 3L
     const val SUGGEST_LEFT_AFTER_DAYS = 60L
     const val DEFAULT_RESTART_AFTER_DAYS = 60

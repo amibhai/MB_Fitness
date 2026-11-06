@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MB Fitness Club</string>
+    <string name="widget_description">How many members are due and overdue</string>
 </resources>

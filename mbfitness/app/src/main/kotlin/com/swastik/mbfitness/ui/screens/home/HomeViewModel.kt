@@ -168,7 +168,7 @@ class HomeViewModel(
             testMode = settings.isTestMode(current),
             today = today,
             collectedThisMonth = collected,
-            pending = rows.sumOf { MemberRules.due(it.balance) },
+            pending = rows.filter { MemberRules.countsAsPending(it.status) }.sumOf { MemberRules.due(it.balance) },
             activeCount = rows.count { it.status == MemberState.ACTIVE },
             query = filter.query,
             tab = filter.tab,

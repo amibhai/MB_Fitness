@@ -2,10 +2,7 @@ package com.swastik.mbfitness.ui.navigation
 
 import androidx.activity.compose.LocalActivity
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.Icon
@@ -46,9 +43,7 @@ import com.swastik.mbfitness.domain.PaymentMode
 import com.swastik.mbfitness.ui.appViewModel
 import com.swastik.mbfitness.ui.components.AppSnackbarHost
 import com.swastik.mbfitness.ui.components.ConfirmDialog
-import com.swastik.mbfitness.ui.components.EmptyState
 import com.swastik.mbfitness.ui.components.LocalSnackbar
-import com.swastik.mbfitness.ui.components.MbTopBar
 import com.swastik.mbfitness.ui.components.SnackAction
 import com.swastik.mbfitness.ui.components.SnackbarController
 import com.swastik.mbfitness.ui.screens.home.HomeScreen
@@ -63,6 +58,7 @@ import com.swastik.mbfitness.ui.screens.messages.MessagesScreen
 import com.swastik.mbfitness.ui.screens.payment.PaymentDetailScreen
 import com.swastik.mbfitness.ui.screens.payment.RecordPaymentScreen
 import com.swastik.mbfitness.ui.screens.payment.UpiQrScreen
+import com.swastik.mbfitness.ui.screens.reports.ReportsScreen
 import com.swastik.mbfitness.ui.screens.settings.AboutScreen
 import com.swastik.mbfitness.ui.screens.settings.BackupScreen
 import com.swastik.mbfitness.ui.screens.settings.ErrorLogScreen
@@ -268,7 +264,7 @@ fun AppNavigation(openImport: Boolean = false, onImportOpened: () -> Unit = {}) 
                 composable<ErrorLogRoute> { ErrorLogScreen(onBack = { navController.popBackStack() }) }
                 composable<HelpRoute> { HelpScreen(onBack = { navController.popBackStack() }) }
                 composable<AboutRoute> { AboutScreen(onBack = { navController.popBackStack() }) }
-                composable<ReportsRoute> { Placeholder("Reports") }
+                composable<ReportsRoute> { ReportsScreen(onMemberClick = { go(MemberRoute(it)) }) }
                 composable<SettingsRoute> {
                     SettingsScreen(
                         onSetPin = { go(SetPinRoute) },
@@ -427,17 +423,6 @@ private fun BottomBar(navController: NavController, destination: NavDestination?
                     unselectedTextColor = colors.textSecondary,
                 ),
             )
-        }
-    }
-}
-
-/** Replaced screen by screen in the later phases. */
-@Composable
-private fun Placeholder(title: String) {
-    Column(Modifier.fillMaxSize()) {
-        MbTopBar(title)
-        Box(Modifier.fillMaxSize()) {
-            EmptyState("Nothing here yet.")
         }
     }
 }
