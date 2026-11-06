@@ -282,6 +282,17 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     )
 }
 
+/** For a screen with no top bar. The status bar's icons are white, and need something dark behind them. */
+@Composable
+fun DarkStatusBarStrip() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .background(MbTheme.colors.header)
+            .statusBarsPadding(),
+    )
+}
+
 enum class BannerTone { DANGER, WARNING, INFO }
 
 /** One banner at a time on Home, chosen by priority (SPEC 10.2 screen 3). */

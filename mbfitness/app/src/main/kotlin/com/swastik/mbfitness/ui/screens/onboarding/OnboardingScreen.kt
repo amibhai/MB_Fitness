@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -38,7 +37,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.core.content.IntentCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.swastik.mbfitness.App
@@ -49,6 +47,7 @@ import com.swastik.mbfitness.domain.OnboardingStep
 import com.swastik.mbfitness.ui.appViewModel
 import com.swastik.mbfitness.ui.components.BannerTone
 import com.swastik.mbfitness.ui.components.ChoiceCard
+import com.swastik.mbfitness.ui.components.DarkStatusBarStrip
 import com.swastik.mbfitness.ui.components.GymLogo
 import com.swastik.mbfitness.ui.components.LinkButton
 import com.swastik.mbfitness.ui.components.ListGap
@@ -58,6 +57,7 @@ import com.swastik.mbfitness.ui.components.MbTextField
 import com.swastik.mbfitness.ui.components.PrimaryButton
 import com.swastik.mbfitness.ui.components.ScreenPadding
 import com.swastik.mbfitness.ui.components.SecondaryButton
+import com.swastik.mbfitness.ui.components.launchOr
 import com.swastik.mbfitness.ui.screens.lock.SetPinScreen
 import com.swastik.mbfitness.ui.screens.lock.SetPinStage
 import com.swastik.mbfitness.ui.screens.lock.SetPinViewModel
@@ -115,41 +115,46 @@ fun OnboardingScreen(onImportMembers: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(colors.background)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(ScreenPadding),
+            .background(colors.background),
     ) {
-        ProgressDots(state.index, state.steps.size)
+        DarkStatusBarStrip()
         Column(
             Modifier
                 .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = ScreenPadding),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .navigationBarsPadding()
+                .padding(ScreenPadding),
         ) {
-            when (state.step) {
-                OnboardingStep.WELCOME -> WelcomeStep(state, viewModel) { overlay = Overlay.RESTORE }
-                OnboardingStep.GYM -> GymStep(state, viewModel) { overlay = Overlay.PLANS }
-                OnboardingStep.SMS -> SmsStep(state, viewModel)
-                OnboardingStep.SIM -> SimStep(state, viewModel, app.deviceChecks.canListSims())
-                OnboardingStep.PLAN_CHECK -> PlanCheckStep(state, viewModel)
-                OnboardingStep.NOTIFICATIONS -> NotificationsStep(viewModel)
-                OnboardingStep.ALARMS -> AlarmsStep(viewModel)
-                OnboardingStep.BATTERY -> BatteryStep(viewModel)
-                OnboardingStep.HIBERNATION -> HibernationStep(viewModel)
-                OnboardingStep.BACKUP_FOLDER -> BackupFolderStep(viewModel)
-                OnboardingStep.APP_LOCK -> AppLockStep(state, viewModel) { overlay = Overlay.PIN }
-                OnboardingStep.LOGO -> LogoStep(state, viewModel)
-                OnboardingStep.TEST -> TestStep(state, viewModel)
-                OnboardingStep.DONE -> DoneStep(viewModel, onImportMembers)
+            ProgressDots(state.index, state.steps.size)
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = ScreenPadding),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                when (state.step) {
+                    OnboardingStep.WELCOME -> WelcomeStep(state, viewModel) { overlay = Overlay.RESTORE }
+                    OnboardingStep.GYM -> GymStep(state, viewModel) { overlay = Overlay.PLANS }
+                    OnboardingStep.SMS -> SmsStep(state, viewModel)
+                    OnboardingStep.SIM -> SimStep(state, viewModel, app.deviceChecks.canListSims())
+                    OnboardingStep.PLAN_CHECK -> PlanCheckStep(state, viewModel)
+                    OnboardingStep.NOTIFICATIONS -> NotificationsStep(viewModel)
+                    OnboardingStep.ALARMS -> AlarmsStep(viewModel)
+                    OnboardingStep.BATTERY -> BatteryStep(viewModel)
+                    OnboardingStep.HIBERNATION -> HibernationStep(viewModel)
+                    OnboardingStep.BACKUP_FOLDER -> BackupFolderStep(viewModel)
+                    OnboardingStep.APP_LOCK -> AppLockStep(state, viewModel) { overlay = Overlay.PIN }
+                    OnboardingStep.LOGO -> LogoStep(state, viewModel)
+                    OnboardingStep.TEST -> TestStep(state, viewModel)
+                    OnboardingStep.DONE -> DoneStep(viewModel, onImportMembers)
+                }
             }
-        }
-        if (state.step != OnboardingStep.WELCOME && state.step != OnboardingStep.DONE) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                LinkButton("Back", viewModel::back)
-                LinkButton("Skip for now", viewModel::next)
+            if (state.step != OnboardingStep.WELCOME && state.step != OnboardingStep.DONE) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    LinkButton("Back", viewModel::back)
+                    LinkButton("Skip for now", viewModel::next)
+                }
             }
         }
     }
@@ -369,7 +374,11 @@ private fun HibernationStep(viewModel: OnboardingViewModel) {
     StepTitle("Unused apps", "Android can pause apps that aren't opened for a while. Turn off \"Pause app activity if unused\" for this one.")
     PrimaryButton(
         "Open the setting",
-        { launcher.launch(IntentCompat.createManageUnusedAppRestrictionsIntent(context, context.packageName)) },
+        {
+            // Not every phone has this screen. Nothing to do on those, so it just moves on.
+            val intent = DeviceIntents.hibernation(context)
+            if (intent != null) launcher.launchOr(intent, viewModel::next) else viewModel.next()
+        },
         Modifier.fillMaxWidth(),
     )
 }
@@ -384,7 +393,7 @@ private fun BackupFolderStep(viewModel: OnboardingViewModel) {
         }
     }
     StepTitle("Backups", "Pick a folder for the weekly backup. A folder that syncs to Google Drive is best, or make one called MB Fitness Backups.")
-    PrimaryButton("Choose folder", { launcher.launch(null) }, Modifier.fillMaxWidth())
+    PrimaryButton("Choose folder", { launcher.launchOr(null) { viewModel.next() } }, Modifier.fillMaxWidth())
 }
 
 @Composable
@@ -412,7 +421,7 @@ private fun LogoStep(state: OnboardingUiState, viewModel: OnboardingViewModel) {
     if (failed) MbBanner("Couldn't read that picture.", BannerTone.DANGER)
     PrimaryButton(
         if (state.settings.logoFile == null) "Pick from gallery" else "Pick another",
-        { launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+        { launcher.launchOr(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) { failed = true } },
         Modifier.fillMaxWidth(),
     )
     if (state.settings.logoFile != null) SecondaryButton("Next", viewModel::next, Modifier.fillMaxWidth())

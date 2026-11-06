@@ -5,6 +5,7 @@ import com.swastik.mbfitness.build.collectModules
 import com.swastik.mbfitness.build.VerifyMergedManifestTask
 import com.swastik.mbfitness.build.VerifySourceRulesTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -32,11 +33,24 @@ android {
         buildConfig = true
     }
 
+    // Hard rule 10: the key and its passwords are never in git. See docs/HANDOVER.md.
+    val keystoreProperties = rootProject.file("keystore.properties")
+    if (keystoreProperties.exists()) {
+        val properties = Properties().apply { keystoreProperties.inputStream().use(::load) }
+        signingConfigs.create("release") {
+            storeFile = rootProject.file(properties.getProperty("storeFile"))
+            storePassword = properties.getProperty("storePassword")
+            keyAlias = properties.getProperty("keyAlias")
+            keyPassword = properties.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         debug {
             enableUnitTestCoverage = true
         }
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

@@ -2,6 +2,7 @@ package com.swastik.mbfitness.ui.components
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -9,6 +10,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -54,4 +56,13 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+/** Some phones have had their file picker removed. That should be a message, not a crash. */
+fun <I> ActivityResultLauncher<I>.launchOr(input: I, onMissing: () -> Unit) {
+    try {
+        launch(input)
+    } catch (_: ActivityNotFoundException) {
+        onMissing()
+    }
 }

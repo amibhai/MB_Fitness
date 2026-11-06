@@ -16,6 +16,7 @@ import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.core.content.PackageManagerCompat
 import androidx.core.content.UnusedAppRestrictionsConstants
 import androidx.core.net.toUri
@@ -144,6 +145,13 @@ object DeviceIntents {
         } else {
             null
         }
+
+    /** Null on a phone without this feature. Android throws rather than saying so politely. */
+    fun hibernation(context: Context): Intent? = try {
+        IntentCompat.createManageUnusedAppRestrictionsIntent(context, context.packageName)
+    } catch (_: UnsupportedOperationException) {
+        null
+    }
 
     /** Sideloaded on purpose, so the Play rule against asking for this doesn't apply (SPEC 11.2). */
     @android.annotation.SuppressLint("BatteryLife")

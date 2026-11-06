@@ -44,6 +44,7 @@ import com.swastik.mbfitness.ui.components.PrimaryButton
 import com.swastik.mbfitness.ui.components.ScreenPadding
 import com.swastik.mbfitness.ui.components.SecondaryButton
 import com.swastik.mbfitness.ui.components.SectionLabel
+import com.swastik.mbfitness.ui.components.launchOr
 import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
 
@@ -119,7 +120,7 @@ fun BackupScreen(onBack: () -> Unit, onRestored: () -> Unit = {}, damaged: Boole
             )
             SecondaryButton(
                 if (state.folderChosen) "Change folder" else "Choose folder",
-                { pickFolder.launch(null) },
+                { pickFolder.launchOr(null) { snackbar.show("This phone has no file picker") } },
                 Modifier.fillMaxWidth(),
             )
 
@@ -127,7 +128,7 @@ fun BackupScreen(onBack: () -> Unit, onRestored: () -> Unit = {}, damaged: Boole
             if (state.latestName != null) {
                 SecondaryButton("Restore latest backup", viewModel::restoreLatest, Modifier.fillMaxWidth(), enabled = !state.busy)
             }
-            SecondaryButton("Pick a backup file", { pickRestoreFile.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth(), enabled = !state.busy)
+            SecondaryButton("Pick a backup file", { pickRestoreFile.launchOr(arrayOf("*/*")) { snackbar.show("This phone has no file picker") } }, Modifier.fillMaxWidth(), enabled = !state.busy)
             if (state.hasSafetyCopy) {
                 SecondaryButton("Undo the last restore", viewModel::restoreSafetyCopy, Modifier.fillMaxWidth(), enabled = !state.busy)
             }
@@ -155,8 +156,8 @@ fun BackupScreen(onBack: () -> Unit, onRestored: () -> Unit = {}, damaged: Boole
             }
 
             SectionLabel("CSV")
-            SecondaryButton("Export members", { saveMembers.launch(CsvExport.fileName("members", today)) }, Modifier.fillMaxWidth())
-            SecondaryButton("Export payments", { savePayments.launch(CsvExport.fileName("payments", today)) }, Modifier.fillMaxWidth())
+            SecondaryButton("Export members", { saveMembers.launchOr(CsvExport.fileName("members", today)) { snackbar.show("This phone has no file picker") } }, Modifier.fillMaxWidth())
+            SecondaryButton("Export payments", { savePayments.launchOr(CsvExport.fileName("payments", today)) { snackbar.show("This phone has no file picker") } }, Modifier.fillMaxWidth())
             Text("CSV files never include Aadhaar numbers.", style = MbType.Caption, color = colors.textSecondary)
         }
     }
@@ -197,7 +198,7 @@ private fun RestoreDialogs(restore: RestoreStage?, viewModel: BackupViewModel, o
             message = buildString {
                 append("This backup has ${restore.summary}.")
                 restore.aadhaarNote?.let { append("\n\n").append(it) }
-                append("\n\nEverything on this phone now gets replaced. A safety copy is saved first, so you can undo this.")
+                append("\n\nEverything in the app gets replaced. A safety copy is saved first, so you can undo this.")
             },
             confirmLabel = "Restore",
             danger = true,

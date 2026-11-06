@@ -55,6 +55,11 @@ private val Context.settingsDataStore by preferencesDataStore(name = "settings")
  * settings can't be opened yet. Tests subclass it to swap in fakes.
  */
 open class App : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        StorageFullGuard.install(this)
+    }
+
     open val clock: TodayProvider = SystemTodayProvider
     val backgroundScope: CoroutineScope by lazy {
         // Background work must never take the app down: anything that escapes goes to the log.

@@ -42,6 +42,7 @@ import com.swastik.mbfitness.ui.components.PrimaryButton
 import com.swastik.mbfitness.ui.components.ScreenPadding
 import com.swastik.mbfitness.ui.components.SecondaryButton
 import com.swastik.mbfitness.ui.components.SectionLabel
+import com.swastik.mbfitness.ui.components.launchOr
 import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
 import kotlinx.coroutines.Dispatchers
@@ -197,10 +198,10 @@ fun ImportScreen(onBack: () -> Unit, onAddOne: () -> Unit) {
                 }
             }
             item {
-                PrimaryButton(if (preview == null) "Pick a CSV file" else "Pick another file", { pickFile.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth())
+                PrimaryButton(if (preview == null) "Pick a CSV file" else "Pick another file", { pickFile.launchOr(arrayOf("*/*")) { snackbar.show("This phone has no file picker") } }, Modifier.fillMaxWidth())
             }
             if (preview == null) {
-                item { SecondaryButton("Get a sample file", { saveSample.launch(MemberImport.SAMPLE_FILE_NAME) }, Modifier.fillMaxWidth()) }
+                item { SecondaryButton("Get a sample file", { saveSample.launchOr(MemberImport.SAMPLE_FILE_NAME) { snackbar.show("This phone has no file picker") } }, Modifier.fillMaxWidth()) }
                 item { SecondaryButton("Add one from contacts", onAddOne, Modifier.fillMaxWidth()) }
             }
 

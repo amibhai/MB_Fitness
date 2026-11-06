@@ -32,7 +32,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.IntentCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,6 +62,7 @@ import com.swastik.mbfitness.ui.components.MbTopBar
 import com.swastik.mbfitness.ui.components.ScreenPadding
 import com.swastik.mbfitness.ui.components.SecondaryButton
 import com.swastik.mbfitness.ui.components.SectionLabel
+import com.swastik.mbfitness.ui.components.launchOr
 import com.swastik.mbfitness.ui.components.rememberSmsPermissionRequest
 import com.swastik.mbfitness.ui.theme.MbTheme
 import com.swastik.mbfitness.ui.theme.MbType
@@ -176,7 +176,7 @@ fun HealthCheckScreen(onBack: () -> Unit, onSetPin: () -> Unit, onBackup: () -> 
                 } else {
                     DeviceIntents.open(context, DeviceIntents.notifications(context))
                 }
-            HealthFix.HIBERNATION -> manageHibernation.launch(IntentCompat.createManageUnusedAppRestrictionsIntent(context, context.packageName))
+            HealthFix.HIBERNATION -> DeviceIntents.hibernation(context)?.let { manageHibernation.launchOr(it) { viewModel.refresh() } }
             HealthFix.PICK_SIM -> onSettings()
             HealthFix.OPEN_MESSAGES -> onMessages()
             HealthFix.BACKUP -> onBackup()

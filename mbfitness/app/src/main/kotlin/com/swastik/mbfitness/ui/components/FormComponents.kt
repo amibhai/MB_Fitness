@@ -302,7 +302,12 @@ fun MbSwitchRow(
             if (help != null) Text(help, style = MbType.Caption, color = colors.textSecondary)
         }
         Spacer(Modifier.width(12.dp))
-        Switch(checked, onCheckedChange = null, colors = SwitchDefaults.colors(checkedTrackColor = colors.button))
+        Switch(checked, onCheckedChange = null, colors = SwitchDefaults.colors(
+                checkedTrackColor = colors.button,
+                uncheckedTrackColor = colors.inactive.background,
+                uncheckedThumbColor = colors.textSecondary,
+                uncheckedBorderColor = colors.textSecondary,
+            ))
     }
 }
 

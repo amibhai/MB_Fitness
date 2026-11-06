@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -42,6 +41,7 @@ import com.swastik.mbfitness.R
 import com.swastik.mbfitness.data.AppSettings
 import com.swastik.mbfitness.domain.Money
 import com.swastik.mbfitness.domain.UpiLink
+import com.swastik.mbfitness.ui.components.DarkStatusBarStrip
 import com.swastik.mbfitness.ui.components.MbIconButton
 import com.swastik.mbfitness.ui.theme.BrandColors
 import com.swastik.mbfitness.ui.theme.MbType
@@ -81,35 +81,40 @@ fun UpiQrScreen(memberName: String, amount: Long, onBack: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(BrandColors.SurfaceLight)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .background(BrandColors.SurfaceLight),
     ) {
-        Row(Modifier.fillMaxWidth()) {
-            MbIconButton(R.drawable.ic_arrow_back, "Back", onBack, tint = ink)
-        }
+        DarkStatusBarStrip()
         Column(
-            Modifier.padding(horizontal = 24.dp),
+            Modifier
+                .weight(1f)
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(Money.format(amount), style = MbType.Display, color = ink)
-            code?.let { bitmap ->
-                Image(
-                    bitmap,
-                    contentDescription = "UPI QR code for ${Money.spoken(amount)} to $payee",
-                    Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f),
-                    contentScale = ContentScale.Fit,
-                    filterQuality = FilterQuality.None,
-                )
+            Row(Modifier.fillMaxWidth()) {
+                MbIconButton(R.drawable.ic_arrow_back, "Back", onBack, tint = ink)
             }
-            Text(payee, style = MbType.BodyLarge, color = ink, textAlign = TextAlign.Center)
-            Text(settings.upiId, style = MbType.Body, color = BrandColors.TextSecondaryLight, textAlign = TextAlign.Center)
-            Text("Scan with any UPI app", style = MbType.Label, color = ink, textAlign = TextAlign.Center)
+            Column(
+                Modifier.padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(Money.format(amount), style = MbType.Display, color = ink)
+                code?.let { bitmap ->
+                    Image(
+                        bitmap,
+                        contentDescription = "UPI QR code for ${Money.spoken(amount)} to $payee",
+                        Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f),
+                        contentScale = ContentScale.Fit,
+                        filterQuality = FilterQuality.None,
+                    )
+                }
+                Text(payee, style = MbType.BodyLarge, color = ink, textAlign = TextAlign.Center)
+                Text(settings.upiId, style = MbType.Body, color = BrandColors.TextSecondaryLight, textAlign = TextAlign.Center)
+                Text("Scan with any UPI app", style = MbType.Label, color = ink, textAlign = TextAlign.Center)
+            }
         }
     }
 }

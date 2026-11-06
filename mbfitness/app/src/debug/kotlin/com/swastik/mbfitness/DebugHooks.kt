@@ -4,13 +4,18 @@ import android.annotation.SuppressLint
 import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
+import android.database.sqlite.SQLiteFullException
 import android.os.Build
+import android.util.Log
 import com.swastik.mbfitness.data.BackupFolder
 import com.swastik.mbfitness.data.MemberDraft
+import com.swastik.mbfitness.data.MemberSaveResult
+import com.swastik.mbfitness.data.RenewalRequest
 import com.swastik.mbfitness.domain.Aadhaar
 import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.ImportRow
 import com.swastik.mbfitness.domain.MessageStatus
+import com.swastik.mbfitness.domain.PaymentMode
 import com.swastik.mbfitness.domain.PhoneNumbers
 import java.io.File
 import kotlinx.coroutines.MainScope
@@ -27,6 +32,8 @@ import kotlinx.coroutines.launch
  *   am start -n com.swastik.mbfitness/.MainActivity --ei mbf_fail 2
  *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_onboarded true
  *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_test_folder true
+ *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_history true
+ *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_storage_full true
  *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_fake_aadhaar true
  *   am start -n com.swastik.mbfitness/.MainActivity --es mbf_upi gymowner@okbank
  *   am start -n com.swastik.mbfitness/.MainActivity --es mbf_trainer 98xxxxxxxx
@@ -54,6 +61,23 @@ object DebugHooks {
 
         override fun delete(name: String) {
             File(folder, name).delete()
+        }
+    }
+
+    /** Six months of made-up payments. No SMS consent, so nothing can ever text them. */
+    private fun addHistory(app: App) {
+        MainScope().launch {
+            val today = app.clock.today()
+            val start = Dates.addMonths(today, -6)
+            (1..12).forEach { index ->
+                val phone = (SEED_PHONE_BASE + 900 + index).toString()
+                val saved = app.members.addMember(MemberDraft("Member ${index.toString().padStart(2, '0')}", phone, 1, start + index))
+                val id = (saved as? MemberSaveResult.Saved)?.memberId ?: return@forEach
+                (0..5).filter { month -> index % (month + 2) != 0 }.forEach { month ->
+                    val day = Dates.addMonths(start, month + 1) + index
+                    if (day <= today) app.members.recordRenewal(RenewalRequest(id, 1, if (index % 5 == 0) 700 else 1200, PaymentMode.CASH, day))
+                }
+            }
         }
     }
 
@@ -100,6 +124,15 @@ object DebugHooks {
         if (activity.intent.getBooleanExtra("mbf_fake_aadhaar", false)) addFakeAadhaar(activity.application as App)
         if (activity.intent.getBooleanExtra("mbf_test_folder", false)) {
             MainScope().launch { (activity.application as App).settings.update { it.copy(backupFolderUri = TEST_FOLDER) } }
+        }
+        if (activity.intent.getBooleanExtra("mbf_history", false)) addHistory(activity.application as App)
+        // As if a save failed on a full phone: the app should say so and carry on.
+        if (activity.intent.getBooleanExtra("mbf_storage_full", false)) {
+            MainScope().launch {
+                // So a check on the phone can tell this really happened.
+                Log.i("MbfDebug", "storage-full check: failing a save now")
+                throw SQLiteFullException("database or disk is full (debug check)")
+            }
         }
         val fail = activity.intent.getIntExtra("mbf_fail", 0)
         if (fail > 0) failQueued(activity.application as App, fail)

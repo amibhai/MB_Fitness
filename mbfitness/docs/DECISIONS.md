@@ -163,3 +163,14 @@ Testing notes:
 - **One resizable widget instead of two.** It shows counts when small, and adds pending and names when taller. Why: less for bhaiya to choose between, and the same result.
 - **With an app PIN set, the widget only shows counts.** SPEC 4-E puts names and money on it, but anyone can see a home screen without getting past the lock, and a PIN means that person asked for this to stay private.
 - **The widget follows the data rather than being told.** While the app is open it watches members and payments, so no path can forget to refresh it, whether a payment, an undo, an import or a restore. The daily run also refreshes it, in case the day changed things.
+
+## 6 Nov 2026: hardening and release (Phase 8)
+
+- **A full phone shows a message instead of crashing (SPEC 14).** Any screen's save can hit it, so it's handled in one place, the app's default uncaught-exception handler. It only steps in for a failed coroutine, because that thread carries on afterwards. Any other failure has already ended its thread, and a main thread can't come back, so those crash as before. So does any failure that isn't a full phone, so real bugs are still noticed.
+- **The guard learns about a failed coroutine from kotlinx.coroutines itself.** A small handler is registered in `META-INF/services`, which kotlinx.coroutines calls just before it hands a failure to the thread. Why: the first version looked for kotlinx.coroutines in the stack trace, which works in a debug build, but a release build's R8 renames those classes, so the guard would quietly have done nothing. A keep rule in `proguard-rules.pro` keeps the handler.
+- **Screens without a top bar get a dark strip behind the status bar.** Onboarding and the UPI QR screen were white behind white status-bar icons, which the phone check showed as unreadable. The QR itself stays on white.
+- **Switches that are off use the app's warm grey,** not Material's default lavender.
+- **Opening a file picker or a phone setting can't crash the app.** Some phones have had their file picker removed, and the "pause app activity if unused" screen doesn't exist on every phone. Each of these shows a message or moves on instead.
+- **The 29 icons nothing uses are deleted,** and lint's exemption for them is gone, so a new unused one fails the build.
+- **Release signing reads `keystore.properties` when it's there.** Without it the release build is unsigned, which is safe: an unsigned APK won't install. Neither file is ever in git (hard rule 10).
+- **Restore says "Everything in the app gets replaced"** rather than "Everything on this phone", which sounded like the whole phone.

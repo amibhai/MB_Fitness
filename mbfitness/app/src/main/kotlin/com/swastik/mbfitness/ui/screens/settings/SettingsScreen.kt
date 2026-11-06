@@ -53,6 +53,7 @@ import com.swastik.mbfitness.ui.components.MbTextField
 import com.swastik.mbfitness.ui.components.MbTopBar
 import com.swastik.mbfitness.ui.components.ScreenPadding
 import com.swastik.mbfitness.ui.components.SectionLabel
+import com.swastik.mbfitness.ui.components.launchOr
 import com.swastik.mbfitness.ui.screens.lock.PinConfirmDialog
 import com.swastik.mbfitness.ui.screens.lock.canUseBiometric
 import com.swastik.mbfitness.ui.theme.MbTheme
@@ -178,7 +179,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(ListGap),
         ) {
             SectionLabel("Gym")
-            MbCard(Modifier.fillMaxWidth(), onClick = { pickLogo.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+            MbCard(Modifier.fillMaxWidth(), onClick = { pickLogo.launchOr(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) { snackbar.show("This phone has no photo picker") } }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     GymLogo(settings.logoFile, settings.gymName)
                     Column(
