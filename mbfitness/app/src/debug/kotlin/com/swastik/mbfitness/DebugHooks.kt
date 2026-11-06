@@ -2,6 +2,8 @@ package com.swastik.mbfitness
 
 import android.annotation.SuppressLint
 import android.app.UiModeManager
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.res.Configuration
 import android.database.sqlite.SQLiteFullException
@@ -17,6 +19,7 @@ import com.swastik.mbfitness.domain.ImportRow
 import com.swastik.mbfitness.domain.MessageStatus
 import com.swastik.mbfitness.domain.PaymentMode
 import com.swastik.mbfitness.domain.PhoneNumbers
+import com.swastik.mbfitness.widget.MbWidgetReceiver
 import java.io.File
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
@@ -34,6 +37,7 @@ import kotlinx.coroutines.launch
  *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_test_folder true
  *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_history true
  *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_storage_full true
+ *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_pin_widget true
  *   am start -n com.swastik.mbfitness/.MainActivity --ez mbf_fake_aadhaar true
  *   am start -n com.swastik.mbfitness/.MainActivity --es mbf_upi gymowner@okbank
  *   am start -n com.swastik.mbfitness/.MainActivity --es mbf_trainer 98xxxxxxxx
@@ -126,6 +130,11 @@ object DebugHooks {
             MainScope().launch { (activity.application as App).settings.update { it.copy(backupFolderUri = TEST_FOLDER) } }
         }
         if (activity.intent.getBooleanExtra("mbf_history", false)) addHistory(activity.application as App)
+        // Asks the launcher to offer the widget. The launcher shows its own dialog, so nothing is
+        // added unless that's accepted.
+        if (activity.intent.getBooleanExtra("mbf_pin_widget", false)) {
+            AppWidgetManager.getInstance(activity).requestPinAppWidget(ComponentName(activity, MbWidgetReceiver::class.java), null, null)
+        }
         // As if a save failed on a full phone: the app should say so and carry on.
         if (activity.intent.getBooleanExtra("mbf_storage_full", false)) {
             MainScope().launch {

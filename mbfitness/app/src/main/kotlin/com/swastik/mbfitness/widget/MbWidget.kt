@@ -2,6 +2,9 @@ package com.swastik.mbfitness.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,6 +38,8 @@ import com.swastik.mbfitness.domain.WidgetSummary
 import com.swastik.mbfitness.ui.theme.BrandColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
@@ -44,8 +49,15 @@ class MbWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL, MEDIUM))
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val summary = summaryFor(context.applicationContext as App)
-        provideContent { WidgetContent(summary) }
+        val app = context.applicationContext as App
+        val first = summaryFor(app)
+        provideContent {
+            // While the widget is showing, an update only recomposes it, so a value read once
+            // would never change. It follows the data itself instead (found on the phone).
+            val summaries = remember { summaries(app) }
+            val summary by summaries.collectAsState(first)
+            WidgetContent(summary)
+        }
     }
 
     @Composable
@@ -90,12 +102,17 @@ class MbWidget : GlanceAppWidget() {
         private const val HEADLINE_SIZE = 16
         private const val BODY_SIZE = 13
 
-        suspend fun summaryFor(app: App): WidgetSummary {
-            val rows = app.members.observeMembers().first().map {
-                WidgetRules.Member(it.name, it.status, it.expiryDate, it.balance)
-            }
-            return WidgetRules.summarize(rows, app.clock.today(), app.settings.current().pinHash != null)
-        }
+        /** A new summary each time members, payments or the PIN change. */
+        fun summaries(app: App): Flow<WidgetSummary> =
+            combine(app.members.observeMembers(), app.settings.settings) { rows, current ->
+                WidgetRules.summarize(
+                    rows.map { WidgetRules.Member(it.name, it.status, it.expiryDate, it.balance) },
+                    app.clock.today(),
+                    current.pinHash != null,
+                )
+            }.distinctUntilChanged()
+
+        suspend fun summaryFor(app: App): WidgetSummary = summaries(app).first()
 
         /** Does nothing if no widget has been added to the home screen. */
         suspend fun refresh(context: Context) = MbWidget().updateAll(context)

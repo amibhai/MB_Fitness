@@ -23,8 +23,11 @@ import com.swastik.mbfitness.widget.WidgetRefresher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -190,6 +193,36 @@ class ReportsUiTest {
             val after = MbWidget.summaryFor(app)
             assertEquals("0 due · 0 overdue", after.headline)
             assertTrue(after.overdueNames.isEmpty())
+        }
+    }
+
+    /**
+     * Found on the phone: while a widget is showing, Glance's update only recomposes it, so the
+     * widget has to follow the data itself. This is the data it follows.
+     */
+    @Test
+    fun whatTheWidgetShowsFollowsAPaymentOnItsOwn() {
+        val id = addMember("Asha Rao", "9876543210", joined = today - 10)
+        runBlocking {
+            val summaries = MbWidget.summaries(app)
+            assertEquals("0 due · 1 overdue", summaries.first().headline)
+            val updated = async(Dispatchers.Default) {
+                withTimeout(5_000) { summaries.first { it.headline == "0 due · 0 overdue" } }
+            }
+            app.members.recordRenewal(RenewalRequest(id, 1, 1200, PaymentMode.CASH, today))
+            assertTrue(updated.await().overdueNames.isEmpty())
+        }
+    }
+
+    @Test
+    fun settingAPinHidesNamesFromTheWidgetStraightAway() {
+        addMember("Asha Rao", "9876543210", joined = today - 10)
+        runBlocking {
+            val summaries = MbWidget.summaries(app)
+            assertEquals(listOf("Asha"), summaries.first().overdueNames)
+            val hidden = async(Dispatchers.Default) { withTimeout(5_000) { summaries.first { it.pending == null } } }
+            app.appLock.setPin("1234", newRecoveryCode = false)
+            assertTrue(hidden.await().overdueNames.isEmpty())
         }
     }
 

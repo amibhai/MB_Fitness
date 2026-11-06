@@ -159,9 +159,11 @@ Testing notes:
 - **A member in the recycle bin leaves the reports, and comes back if restored.** Once deleted for good, their history is gone, as SPEC 12 says, so old months can change then.
 - **The month switcher goes back to the first month with data,** and stops at the current one.
 - **Charts follow the single-series rules:** one colour for all the marks, bars at most 24 dp with only the top corners rounded, a 2 dp line, and no legend because the title says what's plotted. The chart colour (`#C2410C` light, `#E8590C` dark) was checked for contrast against both card colours. Each month is a tap target bigger than its mark, and TalkBack reads each month's value, so nothing depends on seeing the chart.
+- **The months not being read are drawn at 80%, not fainter.** At 45%, which the phone check showed, they fell to about 2:1 against the card, below the 3:1 a chart mark needs. At 80% they're 3.7:1 in light and 3.5:1 in dark.
 - **The active-members line doesn't start at zero.** A gym's count moves by a few people, which would look flat from zero. The picked month's exact number shows above the chart, so the scale can't mislead.
 - **One resizable widget instead of two.** It shows counts when small, and adds pending and names when taller. Why: less for bhaiya to choose between, and the same result.
 - **With an app PIN set, the widget only shows counts.** SPEC 4-E puts names and money on it, but anyone can see a home screen without getting past the lock, and a PIN means that person asked for this to stay private.
+- **While the widget is showing, it watches members, payments and the PIN itself.** Why: found on the phone. Glance keeps a showing widget's session alive, and an update then only recomposes it, so a summary read once when it started never changed. It still said "1 overdue" after the payment. Watching the data inside the widget fixes that.
 - **The widget follows the data rather than being told.** While the app is open it watches members and payments, so no path can forget to refresh it, whether a payment, an undo, an import or a restore. The daily run also refreshes it, in case the day changed things.
 
 ## 6 Nov 2026: hardening and release (Phase 8)

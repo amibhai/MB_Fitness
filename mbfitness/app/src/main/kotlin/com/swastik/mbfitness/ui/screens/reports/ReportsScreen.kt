@@ -361,7 +361,8 @@ private fun CollectionBars(points: List<MonthPoint>, selected: Long, modifier: M
                         ),
                     )
                 }
-                // The month being read is solid. The rest step back, in the same colour.
+                // The month being read is solid. The rest step back, but stay at 3:1 or more against
+                // the card in both themes (light 3.7:1, dark 3.5:1), so every bar is still easy to read.
                 drawPath(path, if (point.firstDay == selected) bar else bar.copy(alpha = UnselectedAlpha))
             }
         }
@@ -420,5 +421,5 @@ private val LineWidth = 2.dp
 private val MarkerRadius = 4.dp
 private val RingWidth = 2.dp
 private const val BarShareOfSlot = 0.6f
-private const val UnselectedAlpha = 0.45f
+private const val UnselectedAlpha = 0.8f
 private const val PaddingShare = 4L
