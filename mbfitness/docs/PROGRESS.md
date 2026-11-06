@@ -18,7 +18,7 @@ Build order and "done when" for each phase: SPEC §17. Run `scripts/check.sh` be
 
 Only Swastik can do these. `docs/HANDOVER.md` has the steps.
 
-- Create `mbfitness-release.jks` and `keystore.properties`, then back the key up in two places. A lost key means the app can never be updated.
+- Back up `mbfitness-release.jks` and `keystore.properties` (made 6 Nov 2026) in two places, and write the password from `keystore.properties` on paper. A lost key means the app can never be updated.
 - Build the signed release, install it on bhaiya's phone over USB, and run the go-live checklist.
 - Register `com.swastik.mbfitness` for developer verification before 2027.
 - Fill in `DEV_CONTACT` (About screen) and supply a real logo for the launcher icon, which is a placeholder "MB" mark.

@@ -6,26 +6,22 @@ Two parts: what Swastik does to release the app, and a one-page guide to print f
 
 # Part 1: releasing the app (for Swastik)
 
-## 1. Create the signing key (once, ever)
+## 1. The signing key
 
-Run this in `mbfitness/`. It asks you to choose a password.
+Created on 6 Nov 2026, in `mbfitness/`:
+
+- `mbfitness-release.jks`: the key. Alias `mbfitness`, RSA 4096, valid until 24 March 2054.
+- `keystore.properties`: where the build finds it. The password is in this file, and only there.
+
+Both are git-ignored. Never commit them.
+
+**Back them up now.** Copy both files to two places, such as your Google Drive and a pen drive, and write the password from `keystore.properties` on paper. Never make a new key: an app signed with a different key can't update this one, so it would have to be uninstalled and set up again from a backup.
+
+The certificate's SHA-256 fingerprint, which developer verification asks for, is public:
 
 ```
-keytool -genkeypair -v -keystore mbfitness-release.jks -alias mbfitness -keyalg RSA -keysize 4096 -validity 10000
+37:A5:C4:8E:73:78:3D:FC:52:48:F9:75:CE:69:19:ED:5F:22:01:9F:FD:34:E5:7F:E9:75:9E:E1:6D:BE:71:2D
 ```
-
-Then create `mbfitness/keystore.properties`:
-
-```
-storeFile=mbfitness-release.jks
-storePassword=YOUR_PASSWORD
-keyAlias=mbfitness
-keyPassword=YOUR_PASSWORD
-```
-
-Both files are git-ignored. Never commit them.
-
-**Back up the key now.** Keep `mbfitness-release.jks` and the passwords in two places, such as your Google Drive and a pen drive, plus the passwords on paper. If this key is lost, the app can never be updated again. It would have to be uninstalled and set up from a backup.
 
 ## 2. Build the release
 
@@ -33,7 +29,7 @@ Both files are git-ignored. Never commit them.
 ./gradlew assembleRelease
 ```
 
-The file is `app/build/outputs/apk/release/app-release.apk`. Without `keystore.properties`, the build makes an unsigned APK, which won't install.
+The file is `app/build/outputs/apk/release/app-release.apk`, signed with the key above. On a computer without `keystore.properties`, the build makes an unsigned APK instead, which won't install.
 
 Raise `versionCode` in `app/build.gradle.kts` for every build you give bhaiya. `versionName` goes 1.0.0, 1.0.1 and so on.
 
