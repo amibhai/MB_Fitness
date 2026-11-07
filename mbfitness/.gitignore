@@ -2,6 +2,8 @@
 .gradle/
 .kotlin/
 build/
+# ...but not the buildSrc package of that name, which holds the build's rule checks.
+!/buildSrc/src/**/build/
 captures/
 *.apk
 *.aab
