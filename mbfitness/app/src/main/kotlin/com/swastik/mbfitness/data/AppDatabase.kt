@@ -57,6 +57,9 @@ abstract class AppDatabase : RoomDatabase() {
         const val FILE_NAME = "mbfitness.db"
         const val RECEIPT_COUNTER = "next_receipt_no"
 
+        /** When 1.0.2 first opened, in millis. Kept with the data, so it travels in backups. */
+        const val JOINING_FIX_CUTOFF = "joining_fix_cutoff"
+
         /** Every schema change adds one here, with a test (hard rule 7). None yet. */
         val ALL_MIGRATIONS: Array<Migration> = emptyArray()
 

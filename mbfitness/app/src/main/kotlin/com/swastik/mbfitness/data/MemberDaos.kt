@@ -190,6 +190,10 @@ interface MemberEventDao {
     @Query("DELETE FROM member_events WHERE id = :id")
     suspend fun delete(id: Long)
 
+    /** Reports count joins by this event, so it follows a changed join date. IMPORTED stays put. */
+    @Query("UPDATE member_events SET date = :date WHERE memberId = :memberId AND type = 'JOINED'")
+    suspend fun moveJoined(memberId: Long, date: Long)
+
     @Query("SELECT date FROM member_events WHERE memberId = :memberId AND type = :type ORDER BY date, id")
     suspend fun dates(memberId: Long, type: MemberEventType): List<Long>
 

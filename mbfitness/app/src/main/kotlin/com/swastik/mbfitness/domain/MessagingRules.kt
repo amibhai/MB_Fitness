@@ -229,6 +229,7 @@ object TemplateRules {
         MessageKind.BEFORE_DUE, MessageKind.ON_DUE, MessageKind.BALANCE_DUE, MessageKind.BIRTHDAY ->
             TemplateEngine.ALL_PLACEHOLDERS - setOf("receipt_no", "days_overdue")
         MessageKind.PAYMENT_THANKS -> TemplateEngine.ALL_PLACEHOLDERS - setOf("plan", "days_overdue")
+        MessageKind.WELCOME -> TemplateEngine.BROADCAST_PLACEHOLDERS + "full_name"
         MessageKind.BROADCAST -> TemplateEngine.BROADCAST_PLACEHOLDERS
         MessageKind.MANUAL, MessageKind.TEST -> emptySet()
     }
@@ -270,6 +271,7 @@ object MessageLabels {
         MessageKind.OVERDUE_2 -> "Overdue repeat"
         MessageKind.BALANCE_DUE -> "Balance"
         MessageKind.PAYMENT_THANKS -> "Thank you"
+        MessageKind.WELCOME -> "Welcome"
         MessageKind.BIRTHDAY -> "Birthday"
         MessageKind.BROADCAST -> "Broadcast"
         MessageKind.MANUAL -> "Your SMS"

@@ -308,7 +308,11 @@ private val HELP = listOf(
     HelpTopic(
         "Add a member",
         R.drawable.ic_person_add,
-        listOf("On Home, tap Add member.", "Fill in the name, number and plan, or pick from your contacts.", "Tick SMS only after asking them. Save."),
+        listOf(
+            "On Home, tap Add member.",
+            "Fill in the name, number, plan and join date. A payment is dated the join date unless you change it.",
+            "Tick SMS only after asking them. Save, and a welcome SMS goes to them.",
+        ),
     ),
     HelpTopic(
         "Set a quiet day",

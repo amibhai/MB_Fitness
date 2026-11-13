@@ -63,6 +63,10 @@ class PaymentFlowTest {
     private suspend fun balance(id: Long) = MemberRules.balance(db.payments().activeFor(id).map { LedgerPayment(it.id, it.kind, it.charged, it.paid, it.paidOn) })
     private fun d(year: Int, month: Int, day: Int) = Dates.of(year, month, day)
 
+    /** Members here agree to SMS, so a welcome waits beside the thank-you. */
+    private suspend fun queuedThanks(memberId: Long) =
+        db.messages().withStatus(memberId, MessageStatus.QUEUED).filter { it.kind == MessageKind.PAYMENT_THANKS }
+
     private suspend fun queuedReminder(memberId: Long, kind: MessageKind = MessageKind.OVERDUE_1): Long =
         db.messages().insert(
             MessageEntity(
@@ -195,8 +199,7 @@ class PaymentFlowTest {
         val id = addMember()
         val saved = renew(id, received = 500)
         assertTrue(saved.thanksQueued)
-        val thanks = db.messages().withStatus(id, MessageStatus.QUEUED).single()
-        assertEquals(MessageKind.PAYMENT_THANKS, thanks.kind)
+        val thanks = queuedThanks(id).single()
         assertTrue(thanks.notBefore - thanks.createdAt >= 10_000)
         assertTrue(thanks.body, "Received Rs 500" in thanks.body)
         assertTrue(thanks.body, "MBF-0001" in thanks.body)
@@ -207,7 +210,7 @@ class PaymentFlowTest {
     fun aFullyPaidThankYouDropsTheBalanceClause() = runTest {
         val id = addMember()
         renew(id, received = 1200)
-        val thanks = db.messages().withStatus(id, MessageStatus.QUEUED).single()
+        val thanks = queuedThanks(id).single()
         assertFalse(thanks.body, "Balance" in thanks.body)
     }
 
@@ -231,7 +234,7 @@ class PaymentFlowTest {
         repo.undoPayment(saved)
         assertEquals(before, member(id).expiryDate)
         assertEquals(0L, balance(id))
-        assertTrue(db.messages().withStatus(id, MessageStatus.QUEUED).isEmpty())
+        assertTrue(queuedThanks(id).isEmpty())
     }
 
     @Test

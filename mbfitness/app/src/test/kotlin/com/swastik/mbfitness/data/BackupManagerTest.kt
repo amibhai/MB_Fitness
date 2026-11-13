@@ -756,4 +756,20 @@ class BackupManagerTest {
         keyVault.keyLost = true
         assertEquals(CopyOutcome.PasswordNeeded, backups.copyToSend())
     }
+
+    /** A backup made before 1.0.2 has no Welcome template, and a member added after restoring it still gets one. */
+    @Test
+    fun aBackupFromBeforeTheWelcomeStillWelcomesNewMembers() = runTest {
+        gymWithData()
+        env.db.openHelper.writableDatabase.execSQL("DELETE FROM templates WHERE type = 'WELCOME'")
+        val old = backups.buildFile()!!
+        wipe()
+
+        assertEquals(BackupRestoreResult.Restored(0), backups.restore(ready(old).plan))
+        assertNull(env.db.templates().get(MessageKind.WELCOME))
+        assertTrue(MessageKind.WELCOME in MessageRepository(env.db, env.settings, env.clock).templates().map { it.kind })
+        val id = saved(MemberDraft("Neha Gupta", "9000000123", 1, env.clock.today(), smsConsent = true))
+        val welcome = env.db.messages().withStatus(id, MessageStatus.QUEUED).single { it.kind == MessageKind.WELCOME }
+        assertTrue(welcome.body, "welcome to Iron Temple" in welcome.body)
+    }
 }

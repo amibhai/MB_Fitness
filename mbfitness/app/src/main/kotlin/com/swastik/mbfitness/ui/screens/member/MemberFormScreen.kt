@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.swastik.mbfitness.R
 import com.swastik.mbfitness.domain.Aadhaar
+import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.Money
 import com.swastik.mbfitness.domain.PaymentMode
 import com.swastik.mbfitness.ui.appViewModel
@@ -119,6 +120,9 @@ fun MemberFormScreen(
                 }
             }
             DateField("Join date", state.joinDate, { day -> day?.let(viewModel::onJoinDateChange) })
+            if (state.joiningPaymentMoves) {
+                Text("Their first payment moves to this date too.", style = MbType.Caption, color = colors.textSecondary)
+            }
 
             if (!state.isEdit) PaidTodaySection(state, viewModel)
 
@@ -173,9 +177,11 @@ fun MemberFormScreen(
     }
 }
 
+/** Money paid at joining. It's dated the join date unless the payment date is changed. */
 @Composable
 private fun PaidTodaySection(state: MemberFormUiState, viewModel: MemberFormViewModel) {
-    SectionLabel("Paid today")
+    val colors = MbTheme.colors
+    SectionLabel("Payment at joining")
     MbSegmented(
         PaidToday.entries,
         state.paidToday,
@@ -193,6 +199,17 @@ private fun PaidTodaySection(state: MemberFormUiState, viewModel: MemberFormView
     }
     if (state.paidToday != PaidToday.NOT_YET) {
         MbSegmented(PaymentMode.entries, state.mode, PaymentMode::displayName, viewModel::onModeSelected)
+        DateField("Payment date", state.paymentDate, { day -> day?.let(viewModel::onPaymentDateChange) }, latest = state.today)
+    }
+    state.validTill?.let { day ->
+        Text("Valid till ${Dates.formatFull(day)}", style = MbType.Label, color = colors.textPrimary)
+        if (state.validTillPassed) {
+            Text(
+                "That's already past. If they paid more recently, change the payment date.",
+                style = MbType.Caption,
+                color = colors.danger,
+            )
+        }
     }
 }
 

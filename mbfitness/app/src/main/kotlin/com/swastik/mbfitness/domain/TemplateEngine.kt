@@ -140,6 +140,7 @@ object TemplateEngine {
             MessageKind.OVERDUE_1, MessageKind.OVERDUE_2 -> "$distance after expiry"
             MessageKind.BALANCE_DUE -> "$distance after a part payment"
             MessageKind.PAYMENT_THANKS -> "right after a payment"
+            MessageKind.WELCOME -> "when you add a member who agreed to SMS"
             MessageKind.BIRTHDAY -> "on their birthday"
             MessageKind.BROADCAST, MessageKind.MANUAL, MessageKind.TEST -> "when you send it"
         }

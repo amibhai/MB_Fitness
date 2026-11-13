@@ -3,6 +3,7 @@ package com.swastik.mbfitness.domain
 import com.swastik.mbfitness.domain.MemberRules.replay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -171,5 +172,52 @@ class MemberRulesTest {
     fun aRenewalWithNoPlanLengthIsRefusedRatherThanGuessed() {
         val broken = LedgerPayment(1, PaymentKind.RENEWAL, 1200, 1200, join)
         assertThrows(IllegalArgumentException::class.java) { replay(join, listOf(broken)) }
+    }
+
+    // ---- The payment made at joining (1.0.2) ----
+
+    @Test
+    fun aPaymentAtJoiningIsDatedTheJoinDateButNeverInTheFuture() {
+        val today = d(2027, 3, 10)
+        assertEquals(today - 5, MemberRules.joiningPaymentDate(today - 5, today))
+        assertEquals(today, MemberRules.joiningPaymentDate(today, today))
+        assertEquals(today, MemberRules.joiningPaymentDate(today + 7, today))
+    }
+
+    @Test
+    fun aJoiningPaymentFollowsTheJoinDateOnlyIfItWasOnIt() {
+        val today = d(2027, 3, 10)
+        val old = d(2027, 3, 1)
+        assertEquals(old + 1, MemberRules.movedJoiningPaymentDate(paidOn = old, oldJoinDate = old, newJoinDate = old + 1, today = today))
+        assertEquals(old - 3, MemberRules.movedJoiningPaymentDate(old, old, old - 3, today))
+        assertEquals("never into the future", today, MemberRules.movedJoiningPaymentDate(old, old, today + 3, today))
+        assertNull("it had its own date", MemberRules.movedJoiningPaymentDate(old + 2, old, old + 5, today))
+        assertNull("the join date didn't change", MemberRules.movedJoiningPaymentDate(old, old, old, today))
+        assertNull("already as late as it can be", MemberRules.movedJoiningPaymentDate(today, today, today + 4, today))
+    }
+
+    @Test
+    fun theFirstExpiryIsWhatSavingWouldGive() {
+        val start = d(2027, 1, 10)
+        val ruleA = RenewalRule.CONTINUE_FROM_EXPIRY
+        assertEquals(d(2027, 2, 10), MemberRules.firstExpiry(start, start, 1, ruleA, 60))
+        assertEquals(d(2027, 4, 10), MemberRules.firstExpiry(start, start, 3, ruleA, 60))
+        // Paid a few days after joining: rule A counts from joining, rule B from the payment.
+        assertEquals(d(2027, 2, 10), MemberRules.firstExpiry(start, start + 5, 1, ruleA, 60))
+        assertEquals(d(2027, 2, 15), MemberRules.firstExpiry(start, start + 5, 1, ruleB, 60))
+        // Paid long after joining: the month starts from the payment.
+        assertEquals(Dates.addMonths(start + 90, 1), MemberRules.firstExpiry(start, start + 90, 1, ruleA, 60))
+        // Paid ahead of a join date still to come: rule A still starts at joining.
+        assertEquals(d(2027, 2, 10), MemberRules.firstExpiry(start, start - 3, 1, ruleA, 60))
+    }
+
+    @Test
+    fun movingAJoiningPaymentIsOnlySafeWhenRemindersWouldNotNotice() {
+        val expiry = d(2027, 2, 1)
+        assertTrue(MemberRules.movingJoiningPaymentIsSafe(expiry, expiry, isLatestPayment = true, balance = 0))
+        assertTrue("an advance has nothing to remind about", MemberRules.movingJoiningPaymentIsSafe(expiry, expiry, isLatestPayment = true, balance = -200))
+        assertTrue("a later payment times any balance reminder", MemberRules.movingJoiningPaymentIsSafe(expiry, expiry, isLatestPayment = false, balance = 700))
+        assertFalse("the expiry would move", MemberRules.movingJoiningPaymentIsSafe(expiry, expiry - 30, isLatestPayment = false, balance = 0))
+        assertFalse("a balance reminder is timed from it", MemberRules.movingJoiningPaymentIsSafe(expiry, expiry, isLatestPayment = true, balance = 700))
     }
 }

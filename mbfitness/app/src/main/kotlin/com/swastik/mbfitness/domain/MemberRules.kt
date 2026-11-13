@@ -64,6 +64,46 @@ object MemberRules {
     /** Default for "amount received" on a renewal: the fee plus anything owed (SPEC 7.3). */
     fun defaultReceived(planPrice: Long, balance: Long): Long = maxOf(planPrice + balance, 0)
 
+    /**
+     * When a new member's first payment is dated: their join date, as money paid at joining is
+     * paid that day. A join date still to come gives today, because a payment can't be dated in
+     * the future (docs/DECISIONS.md, 1.0.2).
+     */
+    fun joiningPaymentDate(joinDate: Long, today: Long): Long = minOf(joinDate, today)
+
+    /**
+     * Where a joining payment moves when the join date is changed, or null if it stays. It only
+     * follows when it was dated on the old join date: one given its own date keeps it.
+     */
+    fun movedJoiningPaymentDate(paidOn: Long, oldJoinDate: Long, newJoinDate: Long, today: Long): Long? {
+        if (paidOn != oldJoinDate || newJoinDate == oldJoinDate) return null
+        return joiningPaymentDate(newJoinDate, today).takeIf { it != paidOn }
+    }
+
+    /** What a new member's first payment makes their expiry, for "Valid till" on the form. */
+    fun firstExpiry(joinDate: Long, paidOn: Long, planMonths: Int, rule: RenewalRule, restartAfterDays: Int): Long {
+        val payment = LedgerPayment(
+            id = 1,
+            kind = PaymentKind.RENEWAL,
+            charged = 0,
+            paid = 0,
+            paidOn = paidOn,
+            planMonths = planMonths,
+            rule = rule,
+            restartAfterDays = restartAfterDays,
+        )
+        return replay(joinDate, listOf(payment)).expiry
+    }
+
+    /**
+     * Whether moving a joining payment to another date leaves everything the reminders look at
+     * as it was: the same expiry, and no balance reminder timed from that payment (they follow
+     * the latest payment). Version 1.0.1 dated joining payments the day the member was entered,
+     * and only these are corrected automatically (docs/DECISIONS.md, 1.0.2).
+     */
+    fun movingJoiningPaymentIsSafe(expiryNow: Long, expiryAfter: Long, isLatestPayment: Boolean, balance: Long): Boolean =
+        expiryNow == expiryAfter && !(isLatestPayment && balance > 0)
+
     fun afterPayment(balance: Long, charged: Long, received: Long): AfterPayment {
         val left = balance + charged - received
         return when {

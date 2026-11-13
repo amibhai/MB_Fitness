@@ -46,6 +46,29 @@ interface PaymentDao {
     @Query("SELECT * FROM payments WHERE memberId = :memberId AND deletedAt IS NULL ORDER BY paidOn DESC, id DESC")
     fun observeFor(memberId: Long): Flow<List<PaymentEntity>>
 
+    /** The payment made on Add member. It's saved in the same moment as the member ([createdAt]). */
+    @Query(
+        """
+        SELECT * FROM payments WHERE memberId = :memberId AND kind = 'RENEWAL' AND createdAt = :createdAt
+        AND deletedAt IS NULL ORDER BY id LIMIT 1
+        """,
+    )
+    suspend fun joiningPayment(memberId: Long, createdAt: Long): PaymentEntity?
+
+    /**
+     * Joining payments of members created before [before] that are dated after the join date
+     * and never edited: version 1.0.1 dated them the day the member was entered.
+     */
+    @Query(
+        """
+        SELECT pay.* FROM payments pay JOIN members m ON m.id = pay.memberId
+        WHERE pay.kind = 'RENEWAL' AND pay.createdAt = m.createdAt AND m.createdAt < :before
+        AND pay.deletedAt IS NULL AND m.deletedAt IS NULL AND pay.editedAt IS NULL AND pay.paidOn > m.joinDate
+        ORDER BY pay.id
+        """,
+    )
+    suspend fun joiningPaymentsDatedAfterJoining(before: Long): List<PaymentEntity>
+
     @Query("UPDATE payments SET periodStart = :start, periodEnd = :end WHERE id = :id")
     suspend fun setPeriod(id: Long, start: Long, end: Long)
 

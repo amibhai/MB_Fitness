@@ -29,6 +29,8 @@ enum class MessageKind(val priority: Int, val isPlanned: Boolean) {
     OVERDUE_2(priority = 2, isPlanned = true),
     BALANCE_DUE(priority = 4, isPlanned = true),
     PAYMENT_THANKS(priority = 1, isPlanned = false),
+    /** Once, when a member who agreed to SMS is added. It goes just before their thank-you. */
+    WELCOME(priority = 1, isPlanned = false),
     BIRTHDAY(priority = 5, isPlanned = true),
     BROADCAST(priority = 5, isPlanned = false),
     MANUAL(priority = 1, isPlanned = false),
@@ -41,8 +43,8 @@ enum class MessageKind(val priority: Int, val isPlanned: Boolean) {
             this == OVERDUE_2 || this == BALANCE_DUE
 
     companion object {
-        /** The kinds that have an editable template row (SPEC 6). */
+        /** The kinds that have an editable template row (SPEC 6). WELCOME was added in 1.0.2. */
         val TEMPLATED: List<MessageKind> =
-            listOf(BEFORE_DUE, ON_DUE, OVERDUE_1, OVERDUE_2, BALANCE_DUE, PAYMENT_THANKS, BIRTHDAY)
+            listOf(BEFORE_DUE, ON_DUE, OVERDUE_1, OVERDUE_2, BALANCE_DUE, PAYMENT_THANKS, BIRTHDAY, WELCOME)
     }
 }

@@ -31,9 +31,9 @@ The certificate's SHA-256 fingerprint, which developer verification asks for, is
 
 The file is `app/build/outputs/apk/release/app-release.apk`, signed with the key above. On a computer without `keystore.properties`, the build makes an unsigned APK instead, which won't install.
 
-Raise `versionCode` in `app/build.gradle.kts` for every build you give bhaiya. `versionName` goes 1.0.0, 1.0.1 and so on. The current release is 1.0.1 (versionCode 2).
+Raise `versionCode` in `app/build.gradle.kts` for every build you give bhaiya. `versionName` goes 1.0.0, 1.0.1 and so on. The current release is 1.0.2 (versionCode 3).
 
-**Keep `app/build/outputs/mapping/release/mapping.txt` with each APK you give him.** It's about 60 MB, so zip it, as `dist/MB-Fitness-Club-1.0.1-mapping.zip` is, and back it up with the key. The error log's crash details name the release build's renamed code, and this file turns them back into real class names and line numbers (Android Studio: Build, Analyze Stack Trace; or the `retrace` tool in the SDK). Every build makes a new one, so it has to be the one from that exact build.
+**Keep `app/build/outputs/mapping/release/mapping.txt` with each APK you give him.** It's about 60 MB, so zip it, as `dist/MB-Fitness-Club-1.0.2-mapping.zip` is, and back it up with the key. The error log's crash details name the release build's renamed code, and this file turns them back into real class names and line numbers (Android Studio: Build, Analyze Stack Trace; or the `retrace` tool in the SDK). Every build makes a new one, so it has to be the one from that exact build.
 
 Debug builds are called "MB Fitness (test)" and install beside the real app (package `com.swastik.mbfitness.debug`), so testing never touches real data.
 
@@ -55,7 +55,7 @@ This runs R8 as a release does, but under the package `com.swastik.mbfitness.smo
 
 ### Without USB
 
-The file to send is `mbfitness/dist/MB-Fitness-Club-1.0.1.apk`. It's the signed release, renamed, and git-ignored like every APK. A copy is also in your Pixel's Downloads folder.
+The file to send is `mbfitness/dist/MB-Fitness-Club-1.0.2.apk`. It's the signed release, renamed, and git-ignored like every APK. Older releases are in `dist/old/`.
 
 1. Send it to him. Google Drive is the most reliable: upload the file, then share the link on WhatsApp, and he opens it in the Drive app. Sending the file itself on WhatsApp works too, and so does Quick Share if you're together.
 2. On his phone, open the file. Android asks to let that app (Drive, WhatsApp or Files) install apps: allow it, then tap **Install**.
@@ -64,6 +64,13 @@ The file to send is `mbfitness/dist/MB-Fitness-Club-1.0.1.apk`. It's the signed 
 5. Afterwards, switch "Install unknown apps" off again for the app he installed it from (Settings, Apps, Special app access).
 
 Updates work the same way: build with a higher `versionCode`, send the new file, and he taps **Update**. His data stays, because the key is the same.
+
+**Updating him from 1.0.1 to 1.0.2.** Send `dist/MB-Fitness-Club-1.0.2.apk` the same way. He opens it and taps **Update**. Nothing needs setting up again: members, payments, settings, PIN and backups all stay. Tell him what's new:
+
+- On Add member, a payment taken at joining is dated the join date. If they paid on a different day, he changes **Payment date**. **Valid till** shows what it gives.
+- A member he adds with SMS ticked gets a welcome SMS. To change or switch it off: Settings, Templates, **Welcome**.
+- The member page shows the join date. To change it: ⋮, **Edit**. Their first payment moves with it if it was on that day.
+- On the first open, members he added with an earlier join date get their first payment moved to that date, where nothing else changes. Members whose expiry would change are left as they were. A wrong one can be fixed from its payment's page.
 
 **Developer verification matters more without USB.** Once Google's checks reach India (planned for 2027), certified phones will refuse to install or update downloaded apps from unverified developers, and only USB installs stay exempt. Register `com.swastik.mbfitness` before then, using the fingerprint in section 1.
 
@@ -130,7 +137,7 @@ Print this page.
 
 **Someone pays:** tap their name, then **Record payment**. Check the amount, then **Save**. If it's by UPI, **Show QR** shows a code they can scan. Made a mistake? **Undo** appears right after saving.
 
-**New member:** on Home, tap **Add member**. Ask them if they agree to SMS reminders, and only then tick the box.
+**New member:** on Home, tap **Add member**. Set the join date. The payment is dated the same day; if they paid on another day, change **Payment date**. Ask them if they agree to SMS reminders, and only then tick the box. They then get a welcome SMS.
 
 **Closing up:** the **Today** tab shows cash, UPI and the total.
 

@@ -24,6 +24,8 @@ import com.swastik.mbfitness.domain.TemplateConfig
 import com.swastik.mbfitness.domain.TemplatePacks
 import com.swastik.mbfitness.domain.TodayProvider
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 /**
@@ -48,7 +50,11 @@ class MessageRepository(
 
     // ---- What the planner needs ----
 
-    suspend fun templates(): List<TemplateConfig> = db.templates().all().map { it.toConfig() }
+    /** Every template, with the pack's preset for a kind added after this database was made. */
+    suspend fun templates(): List<TemplateConfig> = templatesIn(settings.current().packLanguage)
+
+    private suspend fun templatesIn(language: PackLanguage): List<TemplateConfig> =
+        TemplatePacks.withMissing(db.templates().all().map { it.toConfig() }, language)
 
     private suspend fun plannerInput(today: Long, current: AppSettings, ignoreQuietDay: Boolean): PlannerInput {
         val since = Dates.millisAt(today - HISTORY_DAYS, 0)
@@ -76,7 +82,7 @@ class MessageRepository(
         return PlannerInput(
             today = today,
             members = members,
-            templates = templates(),
+            templates = templatesIn(current.packLanguage),
             history = PlannerHistory(
                 usedKeys = messages.usedKeys(since).toSet(),
                 lastReminderDay = lastReminders.associate { it.memberId to Dates.dayOf(it.createdAt) },
@@ -390,7 +396,11 @@ class MessageRepository(
 
     // ---- Templates (SPEC 8.6) ----
 
-    fun observeTemplates(): Flow<List<TemplateConfig>> = db.templates().observeAll().map { rows -> rows.map { it.toConfig() } }
+    /** A kind added in an update shows with the pack's wording until it's saved (TemplatePacks.withMissing). */
+    fun observeTemplates(): Flow<List<TemplateConfig>> =
+        combine(db.templates().observeAll(), settings.settings.map { it.packLanguage }.distinctUntilChanged()) { rows, language ->
+            TemplatePacks.withMissing(rows.map { it.toConfig() }, language)
+        }
 
     suspend fun saveTemplate(config: TemplateConfig) = db.templates().upsert(config.toEntity())
 
@@ -436,6 +446,10 @@ class MessageRepository(
 }
 
 fun TemplateEntity.toConfig() = TemplateConfig(type, body, enabled, offsetDays, repeatEveryDays, maxRepeats)
+
+/** A kind's saved template, or the pack's preset when this database has none yet. */
+suspend fun TemplateDao.getOrPreset(kind: MessageKind, language: PackLanguage): TemplateConfig? =
+    get(kind)?.toConfig() ?: TemplatePacks.preset(kind, language)
 
 fun TemplateConfig.toEntity() = TemplateEntity(kind, body, enabled, offsetDays, repeatEveryDays, maxRepeats)
 

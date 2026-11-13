@@ -12,8 +12,10 @@ import com.swastik.mbfitness.data.PaymentSaved
 import com.swastik.mbfitness.data.PlanEntity
 import com.swastik.mbfitness.data.SettingsStore
 import com.swastik.mbfitness.domain.Aadhaar
+import com.swastik.mbfitness.domain.MemberRules
 import com.swastik.mbfitness.domain.PaymentMode
 import com.swastik.mbfitness.domain.PhoneNumbers
+import com.swastik.mbfitness.domain.RenewalRule
 import com.swastik.mbfitness.domain.ScreenRules
 import com.swastik.mbfitness.domain.TodayProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +46,15 @@ data class MemberFormUiState(
     val plans: List<PlanEntity> = emptyList(),
     val planId: Long? = null,
     val joinDate: Long = 0,
+    val today: Long = 0,
+    /** The joining payment's date. It follows the join date until it's changed by hand. */
+    val paymentDate: Long = 0,
+    val paymentDateEdited: Boolean = false,
+    /** Edit only: the join date as saved, and the date of the payment made on Add member. */
+    val savedJoinDate: Long? = null,
+    val joiningPaymentOn: Long? = null,
+    val renewalRule: RenewalRule = RenewalRule.CONTINUE_FROM_EXPIRY,
+    val restartAfterDays: Int = MemberRules.DEFAULT_RESTART_AFTER_DAYS,
     val paidToday: PaidToday = PaidToday.FULL,
     val partAmount: String = "",
     val mode: PaymentMode = PaymentMode.UPI,
@@ -71,6 +82,25 @@ data class MemberFormUiState(
     val showAadhaarField: Boolean get() = existingAadhaarLast4 == null || changingAadhaar
     val showAadhaarConsent: Boolean get() = showAadhaarField && aadhaarDigits.isNotEmpty()
     val selectedPlan: PlanEntity? get() = plans.firstOrNull { it.id == planId }
+
+    /** What the joining payment makes the new member's expiry, shown before saving. */
+    val validTill: Long?
+        get() = if (isEdit || paidToday == PaidToday.NOT_YET) {
+            null
+        } else {
+            selectedPlan?.let { MemberRules.firstExpiry(joinDate, paymentDate, it.months, renewalRule, restartAfterDays) }
+        }
+
+    /** Already over: likely an old member whose latest payment needs its own date. */
+    val validTillPassed: Boolean get() = validTill?.let { it < today } == true
+
+    /** Edit only: saving moves the payment made on Add member along with the join date. */
+    val joiningPaymentMoves: Boolean
+        get() {
+            val saved = savedJoinDate ?: return false
+            val paidOn = joiningPaymentOn ?: return false
+            return MemberRules.movedJoiningPaymentDate(paidOn, saved, joinDate, today) != null
+        }
 }
 
 /** The form for adding or editing a member (SPEC 10.2 screen 7, 7.10). */
@@ -80,15 +110,27 @@ class MemberFormViewModel(
     private val settings: SettingsStore,
     private val clock: TodayProvider,
 ) : ViewModel() {
-    private val state = MutableStateFlow(MemberFormUiState(joinDate = clock.today(), isEdit = memberId != null))
+    private val state = MutableStateFlow(
+        clock.today().let { today ->
+            MemberFormUiState(joinDate = today, today = today, paymentDate = today, isEdit = memberId != null)
+        },
+    )
     val uiState: StateFlow<MemberFormUiState> = state.asStateFlow()
 
     init {
         viewModelScope.launch {
             val plans = members.observeActivePlans().first()
             val member = memberId?.let { members.member(it) }
+            val joining = memberId?.let { members.joiningPayment(it) }
+            val current = settings.current()
             state.update {
-                val base = it.copy(loaded = true, plans = plans, planId = plans.firstOrNull()?.id)
+                val base = it.copy(
+                    loaded = true,
+                    plans = plans,
+                    planId = plans.firstOrNull()?.id,
+                    renewalRule = current.renewalRule,
+                    restartAfterDays = current.restartAfterDays,
+                )
                 if (member == null) {
                     base
                 } else {
@@ -97,6 +139,8 @@ class MemberFormViewModel(
                         phone = PhoneNumbers.display(member.phone).replace(" ", ""),
                         planId = member.planId,
                         joinDate = member.joinDate,
+                        savedJoinDate = member.joinDate,
+                        joiningPaymentOn = joining?.paidOn,
                         dob = member.dob,
                         isMinor = member.isMinor,
                         guardianName = member.guardianName.orEmpty(),
@@ -121,7 +165,12 @@ class MemberFormViewModel(
 
     fun onPlanSelected(id: Long) = state.update { it.copy(planId = id) }
 
-    fun onJoinDateChange(day: Long) = state.update { it.copy(joinDate = day) }
+    /** The payment date follows, unless it was changed by hand (docs/DECISIONS.md, 1.0.2). */
+    fun onJoinDateChange(day: Long) = state.update {
+        it.copy(joinDate = day, paymentDate = if (it.paymentDateEdited) it.paymentDate else MemberRules.joiningPaymentDate(day, it.today))
+    }
+
+    fun onPaymentDateChange(day: Long) = state.update { it.copy(paymentDate = day, paymentDateEdited = true) }
 
     fun onPaidTodayChange(paid: PaidToday) = state.update { it.copy(paidToday = paid) }
 
@@ -226,8 +275,8 @@ class MemberFormViewModel(
     private suspend fun add(form: MemberFormUiState, aadhaar: Aadhaar?, pinSet: Boolean): MemberFormResult? {
         val plan = form.selectedPlan ?: return null
         val firstPayment = when (form.paidToday) {
-            PaidToday.FULL -> FirstPayment(plan.price, form.mode)
-            PaidToday.PART -> FirstPayment(ScreenRules.parseAmount(form.partAmount) ?: 0, form.mode)
+            PaidToday.FULL -> FirstPayment(plan.price, form.mode, paidOn = form.paymentDate)
+            PaidToday.PART -> FirstPayment(ScreenRules.parseAmount(form.partAmount) ?: 0, form.mode, paidOn = form.paymentDate)
             PaidToday.NOT_YET -> null
         }
         val draft = MemberDraft(

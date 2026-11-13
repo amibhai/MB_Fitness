@@ -151,7 +151,37 @@ class TemplateEngineTest {
         assertEquals("Sends: 7 days after a part payment, then every 7 days, up to 3 times", describe(MessageKind.BALANCE_DUE, 7, 7, 3))
         assertEquals("Sends: right after a payment", describe(MessageKind.PAYMENT_THANKS))
         assertEquals("Sends: on their birthday", describe(MessageKind.BIRTHDAY))
+        assertEquals("Sends: when you add a member who agreed to SMS", describe(MessageKind.WELCOME))
         assertEquals("Sends: when you send it", describe(MessageKind.MANUAL))
+    }
+
+    /** A database from before 1.0.2, or an older backup, has no Welcome row (docs/DECISIONS.md). */
+    @Test
+    fun aKindWithNothingSavedGetsThePacksWording() {
+        val saved = TemplatePacks.defaults(english)
+            .filter { it.kind != MessageKind.WELCOME }
+            .map { it.copy(body = "Edited ${it.kind} - {gym_name}", enabled = false) }
+        val all = TemplatePacks.withMissing(saved, hinglish)
+        assertEquals(MessageKind.TEMPLATED.size, all.size)
+        assertEquals(MessageKind.TEMPLATED.toSet(), all.map { it.kind }.toSet())
+        assertEquals("what was saved is kept as it is", saved, all.filter { it.kind != MessageKind.WELCOME })
+        val welcome = all.single { it.kind == MessageKind.WELCOME }
+        assertEquals(TemplatePacks.preset(MessageKind.WELCOME, hinglish), welcome)
+        assertTrue(welcome.enabled)
+        assertEquals("nothing is added to a full set", saved + welcome, TemplatePacks.withMissing(saved + welcome, english))
+        assertEquals(null, TemplatePacks.preset(MessageKind.BROADCAST, english))
+    }
+
+    @Test
+    fun theWelcomeIsOneSmsEvenForALongName() {
+        for (language in PackLanguage.entries) {
+            val body = TemplatePacks.preset(MessageKind.WELCOME, language)!!.body
+            val rendered = TemplateEngine.render(body, TemplateValues(fullName = "Venkatanarayan Iyer", gymName = "MB Fitness Club"), language)
+            assertTrue("$language", rendered.missing.isEmpty())
+            assertEquals("$language: ${rendered.text}", 1, SmsSegments.count(rendered.text).parts)
+            assertTrue("$language names the gym", "MB Fitness Club" in rendered.text)
+            assertTrue("$language says it's automated", "automated SMS reminder" in rendered.text)
+        }
     }
 
     @Test

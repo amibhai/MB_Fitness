@@ -159,6 +159,24 @@ class MemberFlowsUiTest {
     }
 
     @Test
+    fun theFormDatesThePaymentAndSaysWhatItGives() {
+        fillBasics()
+        waitForText("PAYMENT AT JOINING")
+        waitForText("Payment date")
+        waitForText("Valid till ${Dates.formatFull(Dates.addMonths(Dates.of(2027, 1, 1), 1))}")
+        tap("Not yet")
+        assertTrue(gone("Payment date"))
+        assertTrue(gone("Valid till"))
+    }
+
+    @Test
+    fun theMemberPageShowsTheJoinDate() {
+        addMemberNotYetPaid()
+        openMemberDueToday()
+        waitForText("Joined")
+    }
+
+    @Test
     fun aadhaarIsOptional() {
         addMemberNotYetPaid()
         val member = runBlocking { app.members.observeMembers().first().single() }

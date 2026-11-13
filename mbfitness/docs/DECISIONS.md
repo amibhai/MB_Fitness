@@ -221,3 +221,29 @@ Swastik won't always be around to fix things, so each of these makes the app put
 - **`-Psmoke` builds the release with R8 under its own package, with the test hooks.** Why: R8 can break what only a release build does, and the real app on Swastik's phone can't be replaced for a check. See `docs/HANDOVER.md`.
 - **If the app crashes 3 times within 10 minutes, it opens a plain recovery screen instead:** Try again, Copy the details for Swastik, and Send a copy of your data. Why: a crash on every start would otherwise lock everyone out of the error log, so nobody could find out why, and the data would be stuck too. It uses plain Android views and doesn't open the database until asked, so whatever is crashing the app can't take it down as well.
 - **Version 1.0.1 (versionCode 2).**
+
+## 13 Nov 2026: joining payment date, welcome SMS and join date (1.0.2)
+
+Asked for by Swastik: a new member's payment was saved as paid on the day they were entered, not their join date. He also wanted a welcome SMS when a member is added, and the join date editable. Bhaiya already has members in 1.0.1, so the update has to install over it and keep everything.
+
+- **A payment made at joining is dated the join date.** If the join date is still to come, it's dated today, because a payment can't be dated in the future. Before, it was always the day it was typed in. So Today's closing and Reports counted it on the wrong day, and under rule B, or with a join date more than 60 days back, the expiry was worked out from that day too.
+- **Add member has its own Payment date, and a "Valid till" line.** The payment date copies the join date until it's changed by hand. Why: a long-time member entered with their real join date and a recent payment would otherwise show as overdue straight away. If Valid till has already passed, the form says to change the payment date. Days after today can't be picked.
+- **"Paid today" is now "Payment at joining",** because it isn't always today any more.
+- **The member page shows the join date.** It's still changed from Edit, where the field already was.
+- **Changing the join date moves the JOINED event, and the first payment if it was on the old join date.** Why: Reports count joins by that event, and a payment dated the join date should stay that way after a correction.
+  - A first payment given its own date stays where it is.
+  - The old date goes in the payment's edit history, and Edit member says the payment will move before you save.
+  - That member's queued reminders are cancelled, as after a rename, because the expiry may change. The next daily run plans them again.
+- **A welcome SMS goes once, when a member who agreed to SMS is added.** It's queued before the payment's thank-you, and both wait the thank-you's 10 seconds, so the welcome goes first.
+  - It's a template like the others (Settings, Templates, Welcome), in English and Hinglish, and can be switched off. The English wording is "Hi {name}, welcome to {gym_name}! This is the automated SMS reminder service of {gym_name}. Your fee reminders will come from this number."
+  - It isn't planned, so quiet days and night hours don't hold it back, the same as the thank-you.
+  - It isn't sent without SMS consent (SPEC 8.9: it's automatic), on CSV import (go-live shouldn't send 50 SMS at once), on rejoin or restore, or to members who were already in the app. Bhaiya can Broadcast once to tell existing members.
+- **No database migration.** Room stores the message kind as text, so the schema is unchanged and `AppDatabase.VERSION` stays 1.
+  - A 1.0.1 database, or a backup made before 1.0.2, has no Welcome template row. Reading the templates fills in any missing kind with the pack's preset, in the language in use (`TemplatePacks.withMissing`).
+  - Saving it in the editor stores it like the others. A fresh install seeds it.
+- **1.0.1's joining payments are corrected once, only where it's safe.** Chosen by Swastik.
+  - On the first open after the update, the time is noted in the `counters` table rather than the settings file. So it travels with the members in a backup, and a damaged settings file can't move it.
+  - A joining payment of a member created before then moves to the join date only if all of these hold: it's dated the day the member was entered, it was never edited, and it's later than the join date. It also needs the expiry to stay the same, and no balance reminder to be timed from it. In practice that means a join date up to 60 days before entry, under rule A.
+  - The rest are left exactly as they are. Why: moving them would pull their expiry back and could send overdue SMS to people who have paid. Any of them can be fixed by hand from the payment's page.
+  - A moved payment keeps its old date in its edit history. A 1.0.1 backup restored later is corrected the same way.
+- **Version 1.0.2 (versionCode 3).** Same package and signing key, so installing it over 1.0.1 keeps everything.
