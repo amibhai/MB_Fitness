@@ -6,6 +6,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.swastik.mbfitness.domain.Aadhaar
 import com.swastik.mbfitness.domain.Dates
+import com.swastik.mbfitness.domain.MessageKind
+import com.swastik.mbfitness.domain.PackLanguage
+import com.swastik.mbfitness.domain.TemplatePacks
 import com.swastik.mbfitness.domain.TodayProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +61,13 @@ class TestEnvironment(startDay: Long = Dates.of(2027, 1, 1)) {
         folder.deleteRecursively()
     }
 }
+
+/**
+ * For tests about other SMS: a member who agrees to SMS also gets a welcome (1.0.2), so this
+ * switches it off, the same way bhaiya can in Templates.
+ */
+suspend fun AppDatabase.switchOffWelcome() =
+    templates().upsert(TemplatePacks.preset(MessageKind.WELCOME, PackLanguage.ENGLISH)!!.copy(enabled = false).toEntity())
 
 /** Made up: the 9999 prefix is the range UIDAI uses for test numbers. Never a real person's. */
 fun fakeAadhaarDigits(first11: String = "99990000001"): String = first11 + checkDigitOf(first11)

@@ -22,11 +22,13 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -348,11 +350,18 @@ fun ChoiceCard(
 
 /**
  * A date as a tappable row. The picker works in UTC millis, so converting to and from epoch
- * days this way can't shift the date by a time zone.
+ * days this way can't shift the date by a time zone. Days after [latest] can't be picked.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DateField(label: String, day: Long?, onPick: (Long?) -> Unit, modifier: Modifier = Modifier, allowClear: Boolean = false) {
+fun DateField(
+    label: String,
+    day: Long?,
+    onPick: (Long?) -> Unit,
+    modifier: Modifier = Modifier,
+    allowClear: Boolean = false,
+    latest: Long? = null,
+) {
     val colors = MbTheme.colors
     var open by remember { mutableStateOf(false) }
     Surface(
@@ -376,7 +385,15 @@ fun DateField(label: String, day: Long?, onPick: (Long?) -> Unit, modifier: Modi
         }
     }
     if (open) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = day?.let { it * MILLIS_PER_DAY })
+        val selectable: SelectableDates = remember(latest) {
+            latest?.let { limit ->
+                object : SelectableDates {
+                    override fun isSelectableDate(utcTimeMillis: Long) = Math.floorDiv(utcTimeMillis, MILLIS_PER_DAY) <= limit
+                    override fun isSelectableYear(year: Int) = year <= Dates.year(limit)
+                }
+            } ?: DatePickerDefaults.AllDates
+        }
+        val state = rememberDatePickerState(initialSelectedDateMillis = day?.let { it * MILLIS_PER_DAY }, selectableDates = selectable)
         DatePickerDialog(
             onDismissRequest = { open = false },
             confirmButton = {

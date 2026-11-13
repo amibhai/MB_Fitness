@@ -281,8 +281,13 @@ class ReportsUiTest {
             app.settings.update { it.copy(trainerPhone = "+919000000099") }
             app.dailyRunner.run()
             val queued = app.database.messages().withStatusOnly(com.swastik.mbfitness.domain.MessageStatus.QUEUED)
-            assertEquals(com.swastik.mbfitness.domain.MessageKind.BIRTHDAY, queued.single().kind)
-            assertTrue(queued.single().body, "Happy Birthday Asha" in queued.single().body)
+            // The welcome from joining isn't a planned reminder, so it doesn't stop the birthday.
+            assertEquals(
+                setOf(com.swastik.mbfitness.domain.MessageKind.WELCOME, com.swastik.mbfitness.domain.MessageKind.BIRTHDAY),
+                queued.map { it.kind }.toSet(),
+            )
+            val birthday = queued.single { it.kind == com.swastik.mbfitness.domain.MessageKind.BIRTHDAY }
+            assertTrue(birthday.body, "Happy Birthday Asha" in birthday.body)
             assertTrue(app.fakeNotices.summaries.single().detail, "Birthday: Asha" in app.fakeNotices.summaries.single().detail)
         }
     }

@@ -18,6 +18,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.swastik.mbfitness.data.MemberDraft
 import com.swastik.mbfitness.data.MemberSaveResult
+import com.swastik.mbfitness.data.switchOffWelcome
 import com.swastik.mbfitness.domain.MessageKind
 import com.swastik.mbfitness.domain.MessageStatus
 import com.swastik.mbfitness.ui.navigation.AppNavigation
@@ -50,7 +51,11 @@ class MessagingUiTest {
 
     @Before
     fun show() {
-        runBlocking { app.settings.update { it.copy(quietWeekdays = emptySet(), trainerPhone = "+919000000099") } }
+        runBlocking {
+            app.settings.update { it.copy(quietWeekdays = emptySet(), trainerPhone = "+919000000099") }
+            // These are about reminders and broadcasts, so the welcome a new member gets is off.
+            app.database.switchOffWelcome()
+        }
         compose.setContent { MbTheme { AppNavigation() } }
     }
 
@@ -359,6 +364,23 @@ class MessagingUiTest {
         waitForText("Saved")
         val saved = runBlocking { app.database.templates().get(MessageKind.ON_DUE)!! }
         assertEquals("Hi {name}, please pay {gym_name}.", saved.body)
+    }
+
+    /** A database from 1.0.1 has no Welcome row: the editor shows the pack's wording, and saving stores it. */
+    @Test
+    fun theWelcomeCanBeEditedOnADatabaseFromBeforeIt() {
+        runBlocking { app.database.openHelper.writableDatabase.execSQL("DELETE FROM templates WHERE type = 'WELCOME'") }
+        openSettings("Templates")
+        waitForText("Sends: 3 days before expiry")
+        tap("Welcome")
+        waitForText("Sends: when you add a member who agreed to SMS")
+        waitForText("This is the automated SMS reminder service of MB Fitness Club")
+        type("Wording", "Welcome {name}! Reminders come from this number. - {gym_name}")
+        waitForText("Welcome Rahul! Reminders come from this number. - MB Fitness Club")
+        tap("Save")
+        waitForText("Saved")
+        val saved = runBlocking { app.database.templates().get(MessageKind.WELCOME)!! }
+        assertEquals("Welcome {name}! Reminders come from this number. - {gym_name}", saved.body)
     }
 
     @Test

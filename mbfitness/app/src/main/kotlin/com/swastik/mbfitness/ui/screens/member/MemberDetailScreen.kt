@@ -281,6 +281,8 @@ private fun ProfileCard(member: MemberEntity, state: MemberDetailUiState) {
         Spacer(Modifier.padding(top = 12.dp))
         DetailLine("Plan", state.planName)
         DetailLine("Valid till", Dates.formatFull(member.expiryDate))
+        // Changed from the menu's Edit, which moves their first payment with it if it was on that day.
+        DetailLine("Joined", Dates.formatFull(member.joinDate))
         Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Balance", Modifier.weight(1f), style = MbType.Body, color = colors.textSecondary)
             when {

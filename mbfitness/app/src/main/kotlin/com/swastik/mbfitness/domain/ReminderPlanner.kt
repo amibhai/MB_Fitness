@@ -71,6 +71,9 @@ object DedupeKeys {
 
     fun thanks(memberId: Long, paymentId: Long): String =
         "m$memberId:${MessageKind.PAYMENT_THANKS}:p$paymentId"
+
+    /** Once per member, ever. */
+    fun welcome(memberId: Long): String = "m$memberId:${MessageKind.WELCOME}"
 }
 
 /**

@@ -261,6 +261,8 @@ class MessagingRulesTest {
         assertFalse(allowed(MessageKind.OVERDUE_1, "receipt_no"))
         assertTrue(allowed(MessageKind.PAYMENT_THANKS, "receipt_no"))
         assertFalse(allowed(MessageKind.PAYMENT_THANKS, "plan"))
+        // A welcome goes before anything is due, so it can't quote money or dates.
+        assertEquals(setOf("name", "full_name", "gym_name", "trainer_phone"), TemplateRules.placeholdersFor(MessageKind.WELCOME))
         assertEquals(TemplateEngine.BROADCAST_PLACEHOLDERS, TemplateRules.placeholdersFor(MessageKind.BROADCAST))
         assertTrue(TemplateRules.placeholdersFor(MessageKind.MANUAL).isEmpty())
         assertTrue(TemplateRules.placeholdersFor(MessageKind.TEST).isEmpty())
@@ -303,6 +305,16 @@ class MessagingRulesTest {
     @Test
     fun everyKindHasALabel() {
         assertEquals(MessageKind.entries.size, MessageKind.entries.map(MessageLabels::kind).toSet().size)
+        assertEquals("Welcome", MessageLabels.kind(MessageKind.WELCOME))
+    }
+
+    @Test
+    fun aWelcomeIsSentAtOnceLikeAThankYouAndIsntAFeeReminder() {
+        assertEquals(MessageKind.PAYMENT_THANKS.priority, MessageKind.WELCOME.priority)
+        assertFalse("quiet days and night hours don't hold it", MessageKind.WELCOME.isPlanned)
+        assertFalse("paying doesn't cancel it", MessageKind.WELCOME.isFeeReminder)
+        assertTrue(MessageKind.WELCOME in MessageKind.TEMPLATED)
+        assertEquals("m7:WELCOME", DedupeKeys.welcome(7))
     }
 
     @Test

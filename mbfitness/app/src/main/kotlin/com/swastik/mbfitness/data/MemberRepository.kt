@@ -71,7 +71,8 @@ data class MemberDraft(
     val firstPayment: FirstPayment? = null,
 )
 
-data class FirstPayment(val received: Long, val mode: PaymentMode, val note: String = "")
+/** Money paid at joining. With no [paidOn], it's dated by MemberRules.joiningPaymentDate. */
+data class FirstPayment(val received: Long, val mode: PaymentMode, val note: String = "", val paidOn: Long? = null)
 
 /** Editable details. The Aadhaar has its own calls, and expiry only ever comes from a replay. */
 data class MemberEdit(
@@ -92,6 +93,7 @@ sealed interface MemberSaveResult {
         val payment: PaymentSaved? = null,
         /** False if a number was given but the phone's Keystore refused to encrypt it. */
         val aadhaarStored: Boolean = true,
+        val welcomeQueued: Boolean = false,
     ) : MemberSaveResult
 
     data object NameMissing : MemberSaveResult
@@ -248,14 +250,18 @@ class MemberRepository(
                 ),
             )
             events.insert(MemberEventEntity(memberId = memberId, type = MemberEventType.JOINED, date = draft.joinDate))
+            // Queued before the payment, so it goes just ahead of the thank-you.
+            val welcomeQueued = queueWelcome(memberId, appSettings, now)
             val first = draft.firstPayment?.let { payment ->
                 val plan = requirePlan(draft.planId)
-                insertRenewal(memberId, plan, payment.received, payment.mode, today, payment.note, appSettings, now, rejoinEventId = null)
+                // Paid at joining, so dated the join date, not the day it was typed in (1.0.2).
+                val paidOn = payment.paidOn ?: MemberRules.joiningPaymentDate(draft.joinDate, today)
+                insertRenewal(memberId, plan, payment.received, payment.mode, paidOn, payment.note, appSettings, now, rejoinEventId = null)
             }
             if (first == null) recalculate(memberId)
-            MemberSaveResult.Saved(memberId, first, aadhaarStored = draft.aadhaar == null || cipherText != null)
+            MemberSaveResult.Saved(memberId, first, aadhaarStored = draft.aadhaar == null || cipherText != null, welcomeQueued = welcomeQueued)
         }
-        if (result is MemberSaveResult.Saved && result.payment?.thanksQueued == true) onMessagesQueued()
+        if (result is MemberSaveResult.Saved && (result.payment?.thanksQueued == true || result.welcomeQueued)) onMessagesQueued()
         return result
     }
 
@@ -264,11 +270,13 @@ class MemberRepository(
         if (name.isEmpty()) return MemberSaveResult.NameMissing
         val phone = PhoneNumbers.normalize(edit.phone) ?: return MemberSaveResult.PhoneInvalid
         val now = clock.nowMillis()
+        val today = clock.today()
         return db.withTransaction {
             val member = requireMember(id)
             members.briefByActivePhone(phone)?.takeIf { it.id != id }?.let {
                 return@withTransaction MemberSaveResult.PhoneTaken(it)
             }
+            val joinDateChanged = edit.joinDate != member.joinDate
             members.update(
                 member.copy(
                     name = name,
@@ -284,13 +292,74 @@ class MemberRepository(
                     updatedAt = now,
                 ),
             )
+            if (joinDateChanged) moveJoinDate(member, edit.joinDate, today, now)
             if (phone != member.phone) messages.setQueuedPhone(id, phone)
-            // A queued reminder may quote the old name, so let the planner write it again.
-            if (name != member.name) messages.cancelQueued(id, plannedKinds, "Member details changed")
+            // A queued reminder may quote the old name or expiry, so let the planner write it again.
+            if (name != member.name || joinDateChanged) messages.cancelQueued(id, plannedKinds, "Member details changed")
             recalculate(id)
             MemberSaveResult.Saved(id)
         }
     }
+
+    /**
+     * Reports count joins by the JOINED event, so it moves with the join date. So does the payment
+     * made on Add member, if it was dated on the old join date: one given its own date stays put.
+     */
+    private suspend fun moveJoinDate(member: MemberEntity, newJoinDate: Long, today: Long, now: Long) {
+        events.moveJoined(member.id, newJoinDate)
+        val joining = payments.joiningPayment(member.id, member.createdAt) ?: return
+        val paidOn = MemberRules.movedJoiningPaymentDate(joining.paidOn, member.joinDate, newJoinDate, today) ?: return
+        payments.update(joining.copy(paidOn = paidOn, editedAt = now, editHistory = historyWith(joining, now)))
+    }
+
+    /** The payment made on Add member, while it's still there. The edit form says if it will move. */
+    suspend fun joiningPayment(memberId: Long): PaymentEntity? =
+        members.get(memberId)?.let { payments.joiningPayment(memberId, it.createdAt) }
+
+    /**
+     * Run on every app open. The first time, it notes when, and only members created before then
+     * are ever looked at. The time is kept in the database rather than the settings file, so it
+     * travels with the members in a backup and a damaged settings file can't move it.
+     */
+    suspend fun fixOldJoiningPaymentDates(): Int {
+        val counters = db.counters()
+        val cutoff = db.withTransaction {
+            counters.value(AppDatabase.JOINING_FIX_CUTOFF)
+                ?: clock.nowMillis().also { counters.set(CounterEntity(AppDatabase.JOINING_FIX_CUTOFF, it)) }
+        }
+        return fixOldJoiningPaymentDates(createdBefore = cutoff)
+    }
+
+    /**
+     * Version 1.0.1 dated a new member's first payment the day they were entered, not their join
+     * date. This moves it to the join date, for members created before [createdBefore] (when 1.0.2
+     * first opened), but only where nothing the reminders look at changes: the same expiry, and no
+     * balance reminder timed from it. The rest stay exactly as they are. A moved payment keeps
+     * its old date in its edit history, which also stops it being picked again. Returns how many.
+     */
+    suspend fun fixOldJoiningPaymentDates(createdBefore: Long): Int =
+        payments.joiningPaymentsDatedAfterJoining(createdBefore).count { candidate ->
+            val now = clock.nowMillis()
+            db.withTransaction {
+                val payment = payments.get(candidate.id)?.takeIf { it.editedAt == null && it.deletedAt == null }
+                    ?: return@withTransaction false
+                val member = requireMember(payment.memberId)
+                // 1.0.1 dated it the day the member was entered. Anything else was chosen on purpose.
+                if (payment.paidOn != Dates.dayOf(member.createdAt) || payment.paidOn <= member.joinDate) return@withTransaction false
+                val ledger = payments.activeFor(member.id)
+                val moved = ledger.map { if (it.id == payment.id) it.copy(paidOn = member.joinDate) else it }
+                val safe = MemberRules.movingJoiningPaymentIsSafe(
+                    expiryNow = replayFor(member, ledger.map { it.toLedger() }).expiry,
+                    expiryAfter = replayFor(member, moved.map { it.toLedger() }).expiry,
+                    isLatestPayment = ledger.lastOrNull()?.id == payment.id,
+                    balance = MemberRules.balance(ledger.map { it.toLedger() }),
+                )
+                if (!safe) return@withTransaction false
+                payments.update(payment.copy(paidOn = member.joinDate, editedAt = now, editHistory = historyWith(payment, now)))
+                recalculate(member.id)
+                true
+            }
+        }
 
     suspend fun setSmsConsent(id: Long, agreed: Boolean) {
         val today = clock.today()
@@ -529,9 +598,6 @@ class MemberRepository(
         return db.withTransaction {
             val old = requirePayment(paymentId)
             val member = requireMember(old.memberId)
-            val history = paymentHistory(old.editHistory) + PaymentVersion(
-                old.charged, old.paid, old.paidOn, old.mode, old.planId, old.planMonths, old.note, now,
-            )
             val newPlan = edit.planId?.takeIf { it != old.planId }?.let { requirePlan(it) }
             payments.update(
                 old.copy(
@@ -544,12 +610,19 @@ class MemberRepository(
                     planMonths = newPlan?.months ?: old.planMonths,
                     periodEnd = if (old.kind == PaymentKind.OPENING) edit.openingExpiry ?: old.periodEnd else old.periodEnd,
                     editedAt = now,
-                    editHistory = Json.encodeToString(history),
+                    editHistory = historyWith(old, now),
                 ),
             )
             ExpiryChange(member.expiryDate, recalculate(member.id).expiry)
         }
     }
+
+    /** The payment's edit history with its current values added at the end (SPEC 7.5). */
+    private fun historyWith(old: PaymentEntity, now: Long): String = Json.encodeToString(
+        paymentHistory(old.editHistory) + PaymentVersion(
+            old.charged, old.paid, old.paidOn, old.mode, old.planId, old.planMonths, old.note, now,
+        ),
+    )
 
     /** What deleting would do, for the confirmation: "expiry changes from 12 Dec to 12 Nov". */
     suspend fun previewDeletePayment(paymentId: Long): ExpiryChange {
@@ -811,6 +884,41 @@ class MemberRepository(
             ),
         )
         return true
+    }
+
+    /**
+     * Once, when a member who agreed to SMS is added: says the reminders will come from this
+     * number (docs/DECISIONS.md, 1.0.2). It waits as long as the thank-you, so it goes first.
+     */
+    private suspend fun queueWelcome(memberId: Long, appSettings: AppSettings, now: Long): Boolean {
+        val member = requireMember(memberId)
+        if (!member.smsConsent || !member.remindersEnabled) return false
+        val template = db.templates().getOrPreset(MessageKind.WELCOME, appSettings.packLanguage)?.takeIf { it.enabled }
+            ?: return false
+        val rendered = TemplateEngine.render(
+            template.body,
+            TemplateValues(
+                fullName = member.name,
+                gymName = appSettings.gymName,
+                trainerPhone = PhoneNumbers.display(appSettings.trainerPhone),
+            ),
+            appSettings.packLanguage,
+        )
+        if (rendered.missing.isNotEmpty()) return false
+        val id = messages.insert(
+            MessageEntity(
+                memberId = memberId,
+                phone = member.phone,
+                kind = MessageKind.WELCOME,
+                body = rendered.text,
+                parts = SmsSegments.count(rendered.text).parts,
+                priority = MessageKind.WELCOME.priority,
+                dedupeKey = DedupeKeys.welcome(memberId),
+                createdAt = now,
+                notBefore = now + THANKS_DELAY_MILLIS,
+            ),
+        )
+        return id > 0
     }
 
     /**

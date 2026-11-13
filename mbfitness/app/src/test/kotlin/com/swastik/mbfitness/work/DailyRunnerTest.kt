@@ -8,17 +8,20 @@ import com.swastik.mbfitness.data.MessageRepository
 import com.swastik.mbfitness.data.QuietDateEntity
 import com.swastik.mbfitness.data.RenewalRequest
 import com.swastik.mbfitness.data.TestEnvironment
+import com.swastik.mbfitness.data.switchOffWelcome
 import com.swastik.mbfitness.domain.Dates
 import com.swastik.mbfitness.domain.MessageKind
 import com.swastik.mbfitness.domain.MessageStatus
 import com.swastik.mbfitness.domain.PaymentMode
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.DayOfWeek
@@ -36,6 +39,10 @@ class DailyRunnerTest {
 
     @After
     fun tearDown() = env.close()
+
+    /** These are about reminders, so the welcome a new member gets is switched off. */
+    @Before
+    fun noWelcome() = runBlocking { env.db.switchOffWelcome() }
 
     private suspend fun configure() = env.settings.update {
         it.copy(trainerPhone = "+919000000099", upiId = "gym@okbank", quietWeekdays = emptySet())

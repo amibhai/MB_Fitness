@@ -453,7 +453,8 @@ class OutboxEngineTest {
         env.repository.undoPayment(saved)
         env.clock.advance(11_000)
         assertNull(engine.run())
-        assertTrue("an undone payment must never be thanked", sender.accepted.isEmpty())
+        // Only the welcome goes: they still joined.
+        assertTrue("an undone payment must never be thanked", sender.accepted.none { "Received" in it.body })
     }
 
     @Test
@@ -462,8 +463,12 @@ class OutboxEngineTest {
         env.repository.recordRenewal(RenewalRequest(id, 1, 1200, PaymentMode.CASH, env.clock.today()))
         env.clock.advance(11_000)
         engine.run()
-        assertTrue(sender.accepted.single().body, "Received Rs 1200" in sender.accepted.single().body)
-        assertFalse(sender.accepted.single().body.startsWith("[TEST"))
+        val thanks = sender.accepted.single { "Received" in it.body }
+        assertTrue(thanks.body, "Received Rs 1200" in thanks.body)
+        assertFalse(thanks.body.startsWith("[TEST"))
+        // The welcome from joining goes just before it.
+        assertEquals(2, sender.accepted.size)
+        assertTrue(sender.accepted.first().body, sender.accepted.first().body.startsWith("Hi Rahul, welcome to"))
     }
 
     /** "Due today" written last night is false this morning, so it waits to be written again. */

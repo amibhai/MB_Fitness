@@ -175,6 +175,8 @@ open class App : Application() {
         backgroundScope.launch {
             attempt("Opening: alarms") { armReminders() }
             attempt("Opening: setup date") { noteSetupDone() }
+            // 1.0.1 dated joining payments the day the member was entered (docs/DECISIONS.md).
+            attempt("Opening: joining payment dates") { members.fixOldJoiningPaymentDates() }
             attempt("Opening: daily run") { dailyRunner.runIfDue() }
             attempt("Opening: outbox") { outboxKicker.kick() }
         }
